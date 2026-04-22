@@ -2,3 +2,5 @@ venv/
 *.db
 venv/
 *.db
+venv/
+*.db
