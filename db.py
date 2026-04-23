@@ -63,8 +63,9 @@ class ProgramSet(Base):
     exercise_id    = Column(Integer, ForeignKey("exercises.id"),    nullable=False)
     set_num        = Column(Integer, nullable=False)   # order within the day
     target_reps    = Column(Integer, nullable=True)    # null = AMRAP
-    target_rir     = Column(Integer, nullable=True)    # null = not specified
-    notes          = Column(Text,    nullable=True)    # e.g. "pause at bottom"
+    target_rir      = Column(Integer, nullable=True)   # null = not specified
+    target_pct_1rm  = Column(Float,   nullable=True)   # e.g. 0.70 for 70% of 1RM
+    notes           = Column(Text,    nullable=True)   # e.g. "pause at bottom"
 
     day      = relationship("ProgramDay", back_populates="sets")
     exercise = relationship("Exercise",   back_populates="program_sets")
@@ -99,7 +100,7 @@ class LoggedSet(Base):
     reps           = Column(Integer, nullable=False)
     rir            = Column(Integer, nullable=True)    # reps in reserve
     rest_secs      = Column(Integer, nullable=True)    # seconds since last set
-    # weight stored in kg throughout — no unit conversion needed
+    # weight stored in lb throughout — no unit conversion needed
     is_pr          = Column(Boolean, default=False)
     set_type       = Column(String,  default="working")  # working / warmup / failure / drop
     logged_at      = Column(DateTime, default=datetime.utcnow)

@@ -1,6 +1,66 @@
 import streamlit as st
 from datetime import datetime
-from db import SessionLocal, Program, ProgramDay, Session
+from db import SessionLocal, Program, ProgramDay, Session, LoggedSet
+
+
+# ---------------------------------------------------------------------------
+# Helpers — timers
+# ---------------------------------------------------------------------------
+def fmt_duration(seconds: int) -> str:
+    """Format seconds into HH:MM:SS string."""
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02}:{m:02}:{s:02}"
+
+
+def get_day_label(program_day_id: int) -> str:
+    db = SessionLocal()
+    day = db.query(ProgramDay).filter(ProgramDay.id == program_day_id).first()
+    db.close()
+    return day.label if day else "Unknown Day"
+
+
+# ---------------------------------------------------------------------------
+# Screen 2 — sticky header
+# ---------------------------------------------------------------------------
+def screen_logger():
+    now = datetime.utcnow()
+
+    # --- Compute durations ---
+    session_start = st.session_state.get("session_start_time")
+    last_set_time = st.session_state.get("last_set_time")
+    first_set_logged = st.session_state.get("first_set_logged", False)
+
+    session_secs = int((now - session_start).total_seconds()) if session_start else 0
+    rest_secs    = int((now - last_set_time).total_seconds()) if (last_set_time and first_set_logged) else 0
+
+    day_label = get_day_label(st.session_state.program_day_id)
+
+    # --- Sticky header ---
+    st.markdown(f"### {day_label}")
+    col1, col2, col3 = st.columns([2, 2, 2])
+    col1.metric("Session", fmt_duration(session_secs))
+    col2.metric("Rest", fmt_duration(rest_secs) if first_set_logged else "--:--:--")
+    col3.empty()
+
+    if st.button("Finish Session", type="primary", use_container_width=True):
+        db = SessionLocal()
+        session = db.query(Session).filter(Session.id == st.session_state.session_id).first()
+        if session:
+            session.duration_mins = session_secs // 60
+            db.commit()
+        db.close()
+        st.session_state.session_started  = False
+        st.session_state.session_id       = None
+        st.session_state.program_day_id   = None
+        st.session_state.last_set_time    = None
+        st.session_state.session_start_time = None
+        st.session_state.first_set_logged = False
+        st.rerun()
+
+    st.divider()
+    st.info("Exercise logger coming next.")
 
 
 # ---------------------------------------------------------------------------
@@ -99,10 +159,12 @@ def screen_select_day():
     # --- Start session ---
     if st.button("Start Session", type="primary", use_container_width=True):
         session_id = create_session(selected_day_id)
-        st.session_state.session_id     = session_id
-        st.session_state.program_day_id = selected_day_id
-        st.session_state.session_started = True
-        st.session_state.last_set_time  = datetime.utcnow()
+        st.session_state.session_id          = session_id
+        st.session_state.program_day_id      = selected_day_id
+        st.session_state.session_started     = True
+        st.session_state.last_set_time       = None
+        st.session_state.session_start_time  = datetime.utcnow()
+        st.session_state.first_set_logged    = False
         st.rerun()
 
 
@@ -113,9 +175,4 @@ def render():
     if not st.session_state.session_started:
         screen_select_day()
     else:
-        st.info("Screen 2 — Logger coming next.")
-        if st.button("End Session (placeholder)"):
-            st.session_state.session_started = False
-            st.session_state.session_id      = None
-            st.session_state.program_day_id  = None
-            st.rerun()
+        screen_logger()

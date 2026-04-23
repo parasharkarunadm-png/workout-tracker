@@ -1,6 +1,7 @@
 import streamlit as st
 from db import init_db
 import log_workout
+
 # ---------------------------------------------------------------------------
 # Page config — must be the first Streamlit call in the script
 # ---------------------------------------------------------------------------
@@ -20,10 +21,12 @@ init_db()
 # Session state defaults — initialize once, persist across reruns
 # ---------------------------------------------------------------------------
 defaults = {
-    "session_started": False,   # controls Screen 1 vs Screen 2
-    "session_id":      None,    # active Session row id
-    "program_day_id":  None,    # locked-in program day
-    "last_set_time":   None,    # timestamp for rest timer
+    "session_started":    False,
+    "session_id":         None,
+    "program_day_id":     None,
+    "last_set_time":      None,
+    "session_start_time": None,
+    "first_set_logged":   False,
 }
 for key, val in defaults.items():
     if key not in st.session_state:
