@@ -21,6 +21,123 @@ def get_day_label(program_day_id: int) -> str:
     return day.label if day else "Unknown Day"
 
 
+def get_planned_exercises(program_day_id: int) -> list:
+    """
+    Returns a list of exercises for today's program day, each with
+    their planned sets. Structure:
+    [
+        {
+            "exercise_id"  : int,
+            "exercise_name": str,
+            "sets": [
+                {
+                    "program_set_id": int,
+                    "set_num"       : int,
+                    "target_reps"   : int or None,
+                    "target_rir"    : int or None,
+                    "target_pct_1rm": float or None,
+                    "notes"         : str or None,
+                },
+                ...
+            ]
+        },
+        ...
+    ]
+    """
+    db = SessionLocal()
+    day = (
+        db.query(ProgramDay)
+        .filter(ProgramDay.id == program_day_id)
+        .first()
+    )
+    if not day:
+        db.close()
+        return []
+
+    # Group program_sets by exercise, preserving order
+    exercises = {}
+    for ps in sorted(day.sets, key=lambda x: (x.exercise_id, x.set_num)):
+        ex = ps.exercise
+        if ex.id not in exercises:
+            exercises[ex.id] = {
+                "exercise_id"  : ex.id,
+                "exercise_name": ex.name,
+                "sets"         : [],
+            }
+        exercises[ex.id]["sets"].append({
+            "program_set_id": ps.id,
+            "set_num"       : ps.set_num,
+            "target_reps"   : ps.target_reps,
+            "target_rir"    : ps.target_rir,
+            "target_pct_1rm": ps.target_pct_1rm,
+            "notes"         : ps.notes,
+        })
+
+    db.close()
+    return list(exercises.values())
+
+
+def get_last_best_set(exercise_id: int, current_session_id: int) -> str:
+    """
+    Returns a string describing the best set (max weight) from the
+    most recent previous session for this exercise.
+    """
+    db = SessionLocal()
+    last = (
+        db.query(LoggedSet)
+        .filter(
+            LoggedSet.exercise_id == exercise_id,
+            LoggedSet.session_id  != current_session_id,
+        )
+        .order_by(LoggedSet.logged_at.desc())
+        .all()
+    )
+    db.close()
+
+    if not last:
+        return "No previous data"
+
+    # Find the session of the most recent set
+    most_recent_session = last[0].session_id
+    session_sets = [s for s in last if s.session_id == most_recent_session]
+    best = max(session_sets, key=lambda s: s.weight_lb)
+    return f"Last best: {best.weight_lb}lb × {best.reps} reps"
+
+
+def log_set(session_id, exercise_id, program_set_id, set_num,
+            weight_lb, reps, rir, rest_secs):
+    """Write one logged set to the database and return its id."""
+    db = SessionLocal()
+
+    # PR check — is this the heaviest weight logged for this exercise?
+    prev_best = (
+        db.query(LoggedSet)
+        .filter(LoggedSet.exercise_id == exercise_id)
+        .order_by(LoggedSet.weight_lb.desc())
+        .first()
+    )
+    is_pr = (prev_best is None) or (weight_lb > prev_best.weight_lb)
+
+    entry = LoggedSet(
+        session_id     = session_id,
+        exercise_id    = exercise_id,
+        program_set_id = program_set_id,
+        set_num        = set_num,
+        weight_lb      = weight_lb,
+        reps           = reps,
+        rir            = rir,
+        rest_secs      = rest_secs,
+        is_pr          = is_pr,
+        set_type       = "working",
+        logged_at      = datetime.utcnow(),
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    db.close()
+    return is_pr
+
+
 # ---------------------------------------------------------------------------
 # Screen 2 — sticky header
 # ---------------------------------------------------------------------------
@@ -51,16 +168,106 @@ def screen_logger():
             session.duration_mins = session_secs // 60
             db.commit()
         db.close()
-        st.session_state.session_started  = False
-        st.session_state.session_id       = None
-        st.session_state.program_day_id   = None
-        st.session_state.last_set_time    = None
+        st.session_state.session_started    = False
+        st.session_state.session_id         = None
+        st.session_state.program_day_id     = None
+        st.session_state.last_set_time      = None
         st.session_state.session_start_time = None
-        st.session_state.first_set_logged = False
+        st.session_state.first_set_logged   = False
+        st.session_state.logged_sets        = {}
         st.rerun()
 
     st.divider()
-    st.info("Exercise logger coming next.")
+
+    # --- Exercise list ---
+    exercises = get_planned_exercises(st.session_state.program_day_id)
+    if not exercises:
+        st.warning("No exercises found for this program day.")
+        return
+
+    for ex in exercises:
+        last_best = get_last_best_set(
+            ex["exercise_id"],
+            st.session_state.session_id,
+        )
+        st.markdown(f"#### {ex['exercise_name']}")
+        st.caption(last_best)
+
+        for s in ex["sets"]:
+            psid      = s["program_set_id"]
+            rep_label = "AMRAP" if s["target_reps"] is None else str(s["target_reps"])
+            pct_label = f" @ {int(s['target_pct_1rm']*100)}% 1RM" if s["target_pct_1rm"] else ""
+
+            # Already logged — show summary line
+            if psid in st.session_state.logged_sets:
+                logged = st.session_state.logged_sets[psid]
+                pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
+                rest_str = f" | Rest: {fmt_duration(logged['rest_secs'])}" if logged["rest_secs"] else ""
+                st.success(
+                    f"✅ Set {s['set_num']} — "
+                    f"{logged['weight_lb']}lb × {logged['reps']} reps"
+                    f" @ RIR {logged['rir']}"
+                    f"{rest_str}{pr_badge}"
+                )
+                continue
+
+            # Not yet logged — show input fields
+            st.markdown(
+                f"**Set {s['set_num']}** — Target: {rep_label} reps{pct_label}"
+            )
+            col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+            weight = col1.number_input(
+                "lb", min_value=0.0, step=0.5,
+                value=None,
+                placeholder="lb",
+                key=f"weight_{psid}",
+            )
+            reps = col2.number_input(
+                "Reps",
+                min_value=0,
+                value=s["target_reps"] if s["target_reps"] else None,
+                placeholder="Reps",
+                key=f"reps_{psid}",
+            )
+            rir = col3.number_input(
+                "RIR",
+                min_value=0,
+                value=s["target_rir"] if s["target_rir"] else None,
+                placeholder="RIR",
+                key=f"rir_{psid}",
+            )
+
+            if col4.button("Log", key=f"log_{psid}"):
+                if weight is None:
+                    st.warning("Enter weight before logging.")
+                    st.stop()
+                now       = datetime.utcnow()
+                last_time = st.session_state.last_set_time
+                rest_secs = int((now - last_time).total_seconds()) if last_time else 0
+
+                is_pr = log_set(
+                    session_id     = st.session_state.session_id,
+                    exercise_id    = ex["exercise_id"],
+                    program_set_id = psid,
+                    set_num        = s["set_num"],
+                    weight_lb      = weight,
+                    reps           = reps,
+                    rir            = rir,
+                    rest_secs      = rest_secs,
+                )
+
+                st.session_state.logged_sets[psid] = {
+                    "weight_lb": weight,
+                    "reps"     : reps,
+                    "rir"      : rir,
+                    "rest_secs": rest_secs,
+                    "is_pr"    : is_pr,
+                }
+                st.session_state.last_set_time    = now
+                st.session_state.first_set_logged = True
+                st.rerun()
+
+        st.divider()
 
 
 # ---------------------------------------------------------------------------
