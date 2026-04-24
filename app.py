@@ -27,6 +27,10 @@ defaults = {
     "last_set_time":      None,
     "session_start_time": None,
     "first_set_logged":   False,
+    "logged_sets":        {},
+    "adhoc_sets":         {},
+    "adhoc_counter":      -1,
+    "last_logged_key":    None,   # tracks last logged set for undo
 }
 for key, val in defaults.items():
     if key not in st.session_state:
