@@ -310,21 +310,35 @@ def screen_logger():
             s.duration_mins = session_secs // 60
             db.commit()
         db.close()
-        for key in ["session_started", "session_id", "program_day_id",
-                    "last_set_time", "session_start_time", "first_set_logged",
-                    "logged_sets", "adhoc_sets", "adhoc_counter", "last_logged_key"]:
-            st.session_state[key] = {
-                "session_started" : False,
-                "session_id"      : None,
-                "program_day_id"  : None,
-                "last_set_time"   : None,
-                "session_start_time": None,
-                "first_set_logged": False,
-                "logged_sets"     : {},
-                "adhoc_sets"      : {},
-                "adhoc_counter"   : -1,
-                "last_logged_key" : None,
-            }[key]
+
+        # Compute summary before clearing state
+        sets        = list(st.session_state.logged_sets.values())
+        total_sets  = len(sets)
+        total_prs   = sum(1 for s in sets if s.get("is_pr"))
+        rest_times  = [s["rest_secs"] for s in sets if s.get("rest_secs")]
+        total_rest  = sum(rest_times)
+        avg_rest    = int(total_rest / len(rest_times)) if rest_times else 0
+
+        st.session_state.summary_data = {
+            "duration_secs": session_secs,
+            "total_sets"   : total_sets,
+            "total_prs"    : total_prs,
+            "total_rest"   : total_rest,
+            "avg_rest"     : avg_rest,
+            "day_label"    : day_label,
+        }
+
+        # Clear session state
+        for key, val in {
+            "session_started": False, "session_id": None,
+            "program_day_id": None, "last_set_time": None,
+            "session_start_time": None, "first_set_logged": False,
+            "logged_sets": {}, "adhoc_sets": {}, "adhoc_counter": -1,
+            "last_logged_key": None,
+        }.items():
+            st.session_state[key] = val
+
+        st.session_state.show_summary = True
         st.rerun()
 
     if st.session_state.last_logged_key is not None:
@@ -417,10 +431,43 @@ def screen_logger():
 
 
 # ---------------------------------------------------------------------------
+# Session summary screen
+# ---------------------------------------------------------------------------
+def screen_summary():
+    d = st.session_state.summary_data
+
+    st.markdown(f"## ✅ Session Complete")
+    st.markdown(f"### {d['day_label']}")
+    st.divider()
+
+    col1, col2 = st.columns(2)
+    col1.metric("Duration",   fmt_duration(d["duration_secs"]))
+    col2.metric("Sets Logged", d["total_sets"])
+
+    col3, col4 = st.columns(2)
+    col3.metric("Total Rest",   fmt_duration(d["total_rest"]))
+    col4.metric("Avg Rest",     fmt_duration(d["avg_rest"]))
+
+    if d["total_prs"] > 0:
+        st.success(f"🏆 {d['total_prs']} PR{'s' if d['total_prs'] > 1 else ''} this session!")
+    else:
+        st.info("No PRs this session — keep grinding.")
+
+    st.divider()
+
+    if st.button("Back to Home", type="primary", use_container_width=True):
+        st.session_state.show_summary = False
+        st.session_state.summary_data = None
+        st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def render():
-    if not st.session_state.session_started:
+    if st.session_state.show_summary:
+        screen_summary()
+    elif not st.session_state.session_started:
         screen_select_day()
     else:
         screen_logger()

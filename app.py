@@ -30,7 +30,9 @@ defaults = {
     "logged_sets":        {},
     "adhoc_sets":         {},
     "adhoc_counter":      -1,
-    "last_logged_key":    None,   # tracks last logged set for undo
+    "last_logged_key":    None,   # tracks last logged set for undo,
+    "show_summary": False,
+    "summary_data": None,
 }
 for key, val in defaults.items():
     if key not in st.session_state:
