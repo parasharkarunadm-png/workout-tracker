@@ -54,6 +54,17 @@ page = st.sidebar.radio(
     ["Log Workout", "Programs", "Analytics","Admin"],
     index=0,
 )
+with st.sidebar:
+    with st.popover("⚙️ Danger Zone"):
+        st.warning("These actions cannot be undone.")
+        if st.button("Clear All Sessions + Logged Sets"):
+            from db import SessionLocal, Session, LoggedSet
+            db = SessionLocal()
+            db.query(LoggedSet).delete()
+            db.query(Session).delete()
+            db.commit()
+            db.close()
+            st.success("Cleared.")
 
 # ---------------------------------------------------------------------------
 # Page routing
