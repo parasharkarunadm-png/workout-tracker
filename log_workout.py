@@ -13,6 +13,33 @@ def fmt_duration(seconds: int) -> str:
     return f"{h:02}:{m:02}:{s:02}"
 
 
+def normalize_set_type(notes: str) -> str:
+    """Normalize notes field to a consistent set_type string."""
+    if not notes:
+        return "working"
+    n = notes.strip().lower().replace(" ", "")
+    if n in ("warmup", "warm-up"):
+        return "warmup"
+    if n == "amrap":
+        return "amrap"
+    if n in ("dropset", "drop", "ds", "tripleds"):
+        return "dropset"
+    return "working"
+
+
+SET_TYPE_PRIORITY = {
+    "warmup": 0,
+    "working": 1,
+    "amrap": 2,
+    "dropset": 3,
+}
+
+
+def get_set_type_priority(notes: str) -> int:
+    """Return sort priority for a set type."""
+    return SET_TYPE_PRIORITY.get(normalize_set_type(notes), 1)
+
+
 # ---------------------------------------------------------------------------
 # DB reads
 # ---------------------------------------------------------------------------
@@ -64,7 +91,7 @@ def get_planned_exercises(program_day_id: int) -> list:
         return []
 
     exercises = {}
-    for ps in sorted(day.sets, key=lambda x: (x.set_num, x.exercise_id)):
+    for ps in sorted(day.sets, key=lambda x: (get_set_type_priority(x.notes), x.set_num)):
         ex = ps.exercise
         if ex.id not in exercises:
             exercises[ex.id] = {
@@ -79,6 +106,7 @@ def get_planned_exercises(program_day_id: int) -> list:
             "target_rir"    : ps.target_rir,
             "target_pct_1rm": ps.target_pct_1rm,
             "notes"         : ps.notes,
+            "set_type"      : normalize_set_type(ps.notes),
         })
 
     db.close()
@@ -90,7 +118,8 @@ def get_last_best_set(exercise_id: int, current_session_id: int) -> str:
     last = (
         db.query(LoggedSet)
         .filter(LoggedSet.exercise_id == exercise_id,
-                LoggedSet.session_id  != current_session_id)
+                LoggedSet.session_id  != current_session_id,
+                LoggedSet.set_type    != "warmup")
         .order_by(LoggedSet.logged_at.desc())
         .all()
     )
@@ -109,35 +138,38 @@ def get_last_best_set(exercise_id: int, current_session_id: int) -> str:
 # DB write
 # ---------------------------------------------------------------------------
 def log_set(session_id, exercise_id, program_set_id, set_num,
-            weight_lb, reps, rir, rest_secs):
+            weight_lb, reps, rir, rest_secs, set_type="working"):
     """Write one logged set. Returns (is_pr, db_id)."""
     db = SessionLocal()
 
-    # Step 1 — find heaviest weight ever logged for this exercise
-    prev_best_weight = (
-        db.query(LoggedSet)
-        .filter(LoggedSet.exercise_id == exercise_id)
-        .order_by(LoggedSet.weight_lb.desc())
-        .first()
-    )
-
-    if prev_best_weight is None:
-        is_pr = True  # first ever set
-    elif weight_lb > prev_best_weight.weight_lb:
-        is_pr = True  # heavier than ever
-    else:
-        # Step 2 — check rep PR at the top weight
-        best_reps_at_top = (
+    # PR only applies to working and amrap sets
+    is_pr = False
+    if set_type in ("working", "amrap"):
+        prev_best_weight = (
             db.query(LoggedSet)
             .filter(LoggedSet.exercise_id == exercise_id,
-                    LoggedSet.weight_lb   == prev_best_weight.weight_lb)
-            .order_by(LoggedSet.reps.desc())
+                    LoggedSet.set_type.in_(["working", "amrap"]))
+            .order_by(LoggedSet.weight_lb.desc())
             .first()
         )
-        is_pr = (
-            weight_lb == prev_best_weight.weight_lb and
-            reps > best_reps_at_top.reps
-        )
+
+        if prev_best_weight is None:
+            is_pr = True
+        elif weight_lb > prev_best_weight.weight_lb:
+            is_pr = True
+        else:
+            best_reps_at_top = (
+                db.query(LoggedSet)
+                .filter(LoggedSet.exercise_id == exercise_id,
+                        LoggedSet.weight_lb   == prev_best_weight.weight_lb,
+                        LoggedSet.set_type.in_(["working", "amrap"]))
+                .order_by(LoggedSet.reps.desc())
+                .first()
+            )
+            is_pr = (
+                weight_lb == prev_best_weight.weight_lb and
+                reps > best_reps_at_top.reps
+            )
 
     entry = LoggedSet(
         session_id     = session_id,
@@ -149,7 +181,7 @@ def log_set(session_id, exercise_id, program_set_id, set_num,
         rir            = rir,
         rest_secs      = rest_secs,
         is_pr          = is_pr,
-        set_type       = "working",
+        set_type       = set_type,
         logged_at      = datetime.utcnow(),
     )
     db.add(entry)
@@ -177,7 +209,6 @@ def undo_last_set():
             db.commit()
         db.close()
 
-    # Remove from adhoc_sets if applicable
     for ex_id, keys in st.session_state.adhoc_sets.items():
         if key in keys:
             keys.remove(key)
@@ -191,8 +222,8 @@ def undo_last_set():
 # ---------------------------------------------------------------------------
 # Shared log button handler
 # ---------------------------------------------------------------------------
-def handle_log(key, exercise_id, program_set_id, set_num, weight, reps, rir):
-    """Called when any Log button is tapped. Updates state and db."""
+def handle_log(key, exercise_id, program_set_id, set_num,
+               weight, reps, rir, set_type="working"):
     now       = datetime.utcnow()
     last_time = st.session_state.last_set_time
     rest_secs = int((now - last_time).total_seconds()) if last_time else 0
@@ -206,6 +237,7 @@ def handle_log(key, exercise_id, program_set_id, set_num, weight, reps, rir):
         reps           = reps,
         rir            = rir if rir is not None else 0,
         rest_secs      = rest_secs,
+        set_type       = set_type,
     )
 
     st.session_state.logged_sets[key] = {
@@ -215,10 +247,29 @@ def handle_log(key, exercise_id, program_set_id, set_num, weight, reps, rir):
         "rest_secs": rest_secs,
         "is_pr"    : is_pr,
         "db_id"    : db_id,
+        "set_type" : set_type,
     }
     st.session_state.last_logged_key  = key
     st.session_state.last_set_time    = now
     st.session_state.first_set_logged = True
+
+
+# ---------------------------------------------------------------------------
+# Set label helper
+# ---------------------------------------------------------------------------
+def get_set_label(sets: list, current_index: int) -> str:
+    """Generate display label like W1, W2, 1, 2, D1 based on set type."""
+    s        = sets[current_index]
+    set_type = s.get("set_type", "working")
+    count    = sum(
+        1 for x in sets[:current_index + 1]
+        if x.get("set_type") == set_type
+    )
+    if set_type == "warmup":
+        return f"W{count}"
+    if set_type == "dropset":
+        return f"D{count}"
+    return str(count)  # working and amrap share numbering
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +297,7 @@ def screen_select_day():
     programs = get_programs()
 
     if not programs:
-        st.warning("No programs found. Go to Programs to import one first.")
+        st.warning("No programs found. Go to Admin to import one first.")
         return
 
     program_map = {p.name: p.id for p in programs}
@@ -292,7 +343,7 @@ def screen_logger():
     last_set_time    = st.session_state.get("last_set_time")
     first_set_logged = st.session_state.get("first_set_logged", False)
 
-    session_secs = int((now - session_start).total_seconds()) if session_start else 0
+    session_secs  = int((now - session_start).total_seconds()) if session_start else 0
     rest_secs_hdr = int((now - last_set_time).total_seconds()) if (last_set_time and first_set_logged) else 0
 
     day_label = get_day_label(st.session_state.program_day_id)
@@ -302,7 +353,6 @@ def screen_logger():
     col1, col2 = st.columns(2)
     col1.metric("Session", fmt_duration(session_secs))
     col2.metric("Rest", fmt_duration(rest_secs_hdr) if first_set_logged else "--:--:--")
-
     st.divider()
 
     # --- Exercises ---
@@ -319,30 +369,33 @@ def screen_logger():
         st.caption(last_best)
 
         # Planned sets
-        for s in ex["sets"]:
+        for idx, s in enumerate(ex["sets"]):
             psid      = s["program_set_id"]
-            rep_label = "AMRAP" if s["target_reps"] is None else str(s["target_reps"])
+            set_type  = s.get("set_type", "working")
+            set_label = get_set_label(ex["sets"], idx)
+            rep_label = "AMRAP" if (s["target_reps"] is None or set_type == "amrap") else str(s["target_reps"])
             pct_label = f" @ {int(s['target_pct_1rm']*100)}% 1RM" if s["target_pct_1rm"] else ""
+            type_tag  = f" `{set_type}`" if set_type != "working" else ""
 
             if psid in st.session_state.logged_sets:
                 logged   = st.session_state.logged_sets[psid]
                 pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
                 rest_str = f" | Rest: {fmt_duration(logged['rest_secs'])}" if logged["rest_secs"] else ""
-                st.success(f"✅ Set {s['set_num']} — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}")
+                st.success(f"✅ Set {set_label}{type_tag} — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}")
                 continue
 
-            st.markdown(f"**Set {s['set_num']}** — Target: {rep_label} reps{pct_label}")
+            st.markdown(f"**Set {set_label}**{type_tag} — Target: {rep_label} reps{pct_label}")
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{psid}")
-            reps   = c2.number_input("Reps", min_value=0,              value=s["target_reps"] if s["target_reps"] else None, placeholder="Reps", key=f"reps_{psid}")
-            rir    = c3.number_input("RIR",  min_value=0,              value=s["target_rir"]  if s["target_rir"]  else None, placeholder="RIR",  key=f"rir_{psid}")
+            reps   = c2.number_input("Reps", min_value=0, value=s["target_reps"] if s["target_reps"] else None, placeholder="Reps", key=f"reps_{psid}")
+            rir    = c3.number_input("RIR",  min_value=0, value=s["target_rir"]  if s["target_rir"]  else None, placeholder="RIR",  key=f"rir_{psid}")
 
             if c4.button("Log", key=f"log_{psid}"):
                 if weight is None:
                     st.warning("Enter weight before logging.")
                     st.stop()
                 try:
-                    handle_log(psid, eid, psid, s["set_num"], weight, reps, rir)
+                    handle_log(psid, eid, psid, s["set_num"], weight, reps, rir, set_type)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -369,7 +422,7 @@ def screen_logger():
                         st.warning("Enter weight before logging.")
                         st.stop()
                     try:
-                        handle_log(akey, eid, None, adhoc_set_num, weight, reps, rir)
+                        handle_log(akey, eid, None, adhoc_set_num, weight, reps, rir, "working")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
@@ -440,12 +493,12 @@ def screen_summary():
     st.divider()
 
     col1, col2 = st.columns(2)
-    col1.metric("Duration",   fmt_duration(d["duration_secs"]))
+    col1.metric("Duration",    fmt_duration(d["duration_secs"]))
     col2.metric("Sets Logged", d["total_sets"])
 
     col3, col4 = st.columns(2)
-    col3.metric("Total Rest",   fmt_duration(d["total_rest"]))
-    col4.metric("Avg Rest",     fmt_duration(d["avg_rest"]))
+    col3.metric("Total Rest",  fmt_duration(d["total_rest"]))
+    col4.metric("Avg Rest",    fmt_duration(d["avg_rest"]))
 
     if d["total_prs"] > 0:
         st.success(f"🏆 {d['total_prs']} PR{'s' if d['total_prs'] > 1 else ''} this session!")
