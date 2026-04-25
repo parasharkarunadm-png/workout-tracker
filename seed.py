@@ -19,7 +19,7 @@ EXERCISES = [
     {"name": "Incline Dumbbell Press",    "primary_muscle": "chest",      "equipment": "dumbbell",   "movement_pattern": "push"},
     {"name": "Cable Fly",                 "primary_muscle": "chest",      "equipment": "cable",      "movement_pattern": "isolation"},
     {"name": "Chest Dip",                 "primary_muscle": "chest",      "equipment": "bodyweight", "movement_pattern": "push"},
-    {"name": "Dumbbell Fly",              "primary_muscle": "chest",      "equipment": "dumbbell",   "movement_pattern": "isolation"}
+    {"name": "Dumbbell Fly",              "primary_muscle": "chest",      "equipment": "dumbbell",   "movement_pattern": "isolation"},
 
     # --- Back ---
     {"name": "Barbell Row",               "primary_muscle": "back",       "equipment": "barbell",    "movement_pattern": "pull"},
