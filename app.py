@@ -87,7 +87,8 @@ elif page == "Admin":
         from seed import seed_exercises
         seed_exercises()
         st.success("Done — exercises seeded.")
-
+    import os
+    st.write("DATABASE_URL:", os.environ.get("DATABASE_URL", "NOT SET"))
     st.divider()
     st.subheader("Import Program")
     program_name = st.text_input("Program Name", value="PHAT")
