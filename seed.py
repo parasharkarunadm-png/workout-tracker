@@ -19,6 +19,7 @@ EXERCISES = [
     {"name": "Incline Dumbbell Press",    "primary_muscle": "chest",      "equipment": "dumbbell",   "movement_pattern": "push"},
     {"name": "Cable Fly",                 "primary_muscle": "chest",      "equipment": "cable",      "movement_pattern": "isolation"},
     {"name": "Chest Dip",                 "primary_muscle": "chest",      "equipment": "bodyweight", "movement_pattern": "push"},
+    {"name": "Dumbbell Fly",              "primary_muscle": "chest",      "equipment": "dumbbell",   "movement_pattern": "isolation"}
 
     # --- Back ---
     {"name": "Barbell Row",               "primary_muscle": "back",       "equipment": "barbell",    "movement_pattern": "pull"},
@@ -39,6 +40,7 @@ EXERCISES = [
     {"name": "Tricep Pushdown",           "primary_muscle": "triceps",    "equipment": "cable",      "movement_pattern": "isolation"},
     {"name": "Overhead Tricep Extension", "primary_muscle": "triceps",    "equipment": "cable",      "movement_pattern": "isolation"},
     {"name": "Skull Crusher",             "primary_muscle": "triceps",    "equipment": "barbell",    "movement_pattern": "isolation"},
+    {"name": "One Arm Dumbbell Extension", "primary_muscle": "triceps",   "equipment": "dumbbell",   "movement_pattern": "isolation"},
 
     # --- Biceps ---
     {"name": "Barbell Curl",              "primary_muscle": "biceps",     "equipment": "barbell",    "movement_pattern": "isolation"},
@@ -56,10 +58,13 @@ EXERCISES = [
     {"name": "Horizontal Row",                    "primary_muscle": "back",       "equipment": "machine",    "movement_pattern": "pull"},
     {"name": "Braced Dumbbell Row",               "primary_muscle": "back",       "equipment": "dumbbell",   "movement_pattern": "pull"},
     {"name": "Close Grip Pulldown",               "primary_muscle": "back",       "equipment": "cable",      "movement_pattern": "pull"},
+    {"name": "Hyperextension",               "primary_muscle": "back",       "equipment": "bodyweight",      "movement_pattern": "isolation"},
 
     # --- Shoulders (PHAT additions) ---
     {"name": "Upright Row",                       "primary_muscle": "shoulders",  "equipment": "barbell",    "movement_pattern": "pull"},
     {"name": "DB Side Lateral Raise",             "primary_muscle": "shoulders",  "equipment": "dumbbell",   "movement_pattern": "isolation"},
+    {"name": "Bent Over Lateral Raise",             "primary_muscle": "shoulders",  "equipment": "dumbbell",   "movement_pattern": "isolation"},
+    {"name": "Barbell Shrug",             "primary_muscle": "shoulders",  "equipment": "barbell",   "movement_pattern": "pull"},
 
     # --- Triceps (PHAT additions) ---
     {"name": "Weighted Dip",                      "primary_muscle": "triceps",    "equipment": "bodyweight", "movement_pattern": "push"},
