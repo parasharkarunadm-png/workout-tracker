@@ -297,54 +297,11 @@ def screen_logger():
 
     day_label = get_day_label(st.session_state.program_day_id)
 
-    # --- Sticky header ---
+    # --- Sticky header — timers only ---
     st.markdown(f"### {day_label}")
     col1, col2 = st.columns(2)
     col1.metric("Session", fmt_duration(session_secs))
     col2.metric("Rest", fmt_duration(rest_secs_hdr) if first_set_logged else "--:--:--")
-
-    if st.button("Finish Session", type="primary", use_container_width=True):
-        db = SessionLocal()
-        s = db.query(Session).filter(Session.id == st.session_state.session_id).first()
-        if s:
-            s.duration_mins = session_secs // 60
-            db.commit()
-        db.close()
-
-        # Compute summary before clearing state
-        sets        = list(st.session_state.logged_sets.values())
-        total_sets  = len(sets)
-        total_prs   = sum(1 for s in sets if s.get("is_pr"))
-        rest_times  = [s["rest_secs"] for s in sets if s.get("rest_secs")]
-        total_rest  = sum(rest_times)
-        avg_rest    = int(total_rest / len(rest_times)) if rest_times else 0
-
-        st.session_state.summary_data = {
-            "duration_secs": session_secs,
-            "total_sets"   : total_sets,
-            "total_prs"    : total_prs,
-            "total_rest"   : total_rest,
-            "avg_rest"     : avg_rest,
-            "day_label"    : day_label,
-        }
-
-        # Clear session state
-        for key, val in {
-            "session_started": False, "session_id": None,
-            "program_day_id": None, "last_set_time": None,
-            "session_start_time": None, "first_set_logged": False,
-            "logged_sets": {}, "adhoc_sets": {}, "adhoc_counter": -1,
-            "last_logged_key": None,
-        }.items():
-            st.session_state[key] = val
-
-        st.session_state.show_summary = True
-        st.rerun()
-
-    if st.session_state.last_logged_key is not None:
-        if st.button("↩️ Undo Last Set", use_container_width=True):
-            undo_last_set()
-            st.rerun()
 
     st.divider()
 
@@ -428,6 +385,48 @@ def screen_logger():
             st.rerun()
 
         st.divider()
+
+    # --- Bottom actions ---
+    if st.session_state.last_logged_key is not None:
+        if st.button("↩️ Undo Last Set", use_container_width=True):
+            undo_last_set()
+            st.rerun()
+
+    if st.button("Finish Session", type="primary", use_container_width=True):
+        db = SessionLocal()
+        s = db.query(Session).filter(Session.id == st.session_state.session_id).first()
+        if s:
+            s.duration_mins = session_secs // 60
+            db.commit()
+        db.close()
+
+        sets       = list(st.session_state.logged_sets.values())
+        total_sets = len(sets)
+        total_prs  = sum(1 for s in sets if s.get("is_pr"))
+        rest_times = [s["rest_secs"] for s in sets if s.get("rest_secs")]
+        total_rest = sum(rest_times)
+        avg_rest   = int(total_rest / len(rest_times)) if rest_times else 0
+
+        st.session_state.summary_data = {
+            "duration_secs": session_secs,
+            "total_sets"   : total_sets,
+            "total_prs"    : total_prs,
+            "total_rest"   : total_rest,
+            "avg_rest"     : avg_rest,
+            "day_label"    : day_label,
+        }
+
+        for key, val in {
+            "session_started": False, "session_id": None,
+            "program_day_id": None, "last_set_time": None,
+            "session_start_time": None, "first_set_logged": False,
+            "logged_sets": {}, "adhoc_sets": {}, "adhoc_counter": -1,
+            "last_logged_key": None,
+        }.items():
+            st.session_state[key] = val
+
+        st.session_state.show_summary = True
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------

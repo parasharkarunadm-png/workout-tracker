@@ -1,6 +1,7 @@
 import streamlit as st
 from db import init_db
 import log_workout
+from streamlit_autorefresh import st_autorefresh
 
 # ---------------------------------------------------------------------------
 # Page config — must be the first Streamlit call in the script
@@ -18,6 +19,13 @@ st.set_page_config(
 init_db()
 
 # ---------------------------------------------------------------------------
+# Auto-refresh every 60 seconds to keep session alive and update timers
+# Only active during a workout session
+# ---------------------------------------------------------------------------
+if st.session_state.get("session_started", False):
+    st_autorefresh(interval=60000, key="session_keepalive")
+
+# ---------------------------------------------------------------------------
 # Session state defaults — initialize once, persist across reruns
 # ---------------------------------------------------------------------------
 defaults = {
@@ -30,9 +38,9 @@ defaults = {
     "logged_sets":        {},
     "adhoc_sets":         {},
     "adhoc_counter":      -1,
-    "last_logged_key":    None,   # tracks last logged set for undo,
-    "show_summary": False,
-    "summary_data": None,
+    "last_logged_key":    None,   # tracks last logged set for undo
+    "show_summary":       False,
+    "summary_data":       None,
 }
 for key, val in defaults.items():
     if key not in st.session_state:

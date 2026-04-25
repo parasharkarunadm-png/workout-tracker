@@ -295,6 +295,50 @@ Each step below was built incrementally and verified working before proceeding.
 - 🏆 badge shown on summary line when `is_pr = True`
 - Verified: repeated same weight/reps not flagged as PR; heavier weight correctly flagged
 
+### Step 14 — Session Summary Screen
+**Files**: log_workout.py, app.py
+
+1. Added `show_summary` and `summary_data` to session state defaults in `app.py`
+2. Finish Session now computes summary data from st.session_state.logged_sets before clearing state:
+- Total duration
+- Total sets logged
+- Total PRs
+- Total rest time and average rest time between sets
+
+
+3. Summary stored in `st.session_state.summary_data` so it survives the state clear
+4. `screen_summary()` renders metrics in a 2x2 grid with PR badge if applicable
+5. "Back to Home" button clears show_summary and summary_data, returns to Screen 1
+6. render() updated with three-way routing: summary → Screen 1 → Screen 2
+7. Verified: summary showed correct duration, sets, rest stats and PR count after a real session; Back to Home returned to Screen 1 cleanly
+
+### Step 15 — Finish Session Button Moved to Bottom
+Files: `log_workout.py`
+
+1. Finish Session and Undo Last Set buttons moved from sticky header to bottom of Screen 2
+2. Sticky header now shows only day label and timers
+3. Improves mobile UX — no accidental taps while scrolling through exercises
+
+
+### Step 16 — Auto-refresh
+Files: `app.py`, `requirements.txt`
+
+- Installed streamlit-autorefresh
+- st_autorefresh(interval=60000) added after session state defaults loop
+- Only active during an active session (session_started = True)
+- Keeps Streamlit Cloud session alive during long rest periods
+- Side effect: rest timer updates every 60 seconds without user interaction
+
+
+### Step 17 — PHAT Weeks 3 and 4
+Files: `phat_import.xlsx`
+
+- Added weeks 3 and 4 to import spreadsheet
+- Week 3: 75% 1RM on power sets
+- Week 4: 77.5% 1RM on power sets
+- Hypertrophy sets unchanged across all weeks
+- Database wiped and reimported cleanly
+
 ---
 
 ## Upcoming (Sprint 3+)
