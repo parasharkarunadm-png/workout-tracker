@@ -76,3 +76,23 @@ elif page == "Admin":
         from seed import seed_exercises
         seed_exercises()
         st.success("Done — exercises seeded.")
+
+    st.divider()
+    st.subheader("Import Program")
+    program_name = st.text_input("Program Name", value="PHAT")
+    source       = st.text_input("Source", value="Liftvault - PHAT by Layne Norton")
+    uploaded     = st.file_uploader("Upload program Excel file", type=["xlsx"])
+
+    if uploaded and st.button("Import Program"):
+        import tempfile, os
+        from importer import import_program
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(uploaded.read())
+            tmp_path = tmp.name
+        try:
+            import_program(tmp_path, program_name, source)
+            st.success(f"Program '{program_name}' imported successfully.")
+        except Exception as e:
+            st.error(f"Import failed: {e}")
+        finally:
+            os.remove(tmp_path)
