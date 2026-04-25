@@ -51,7 +51,7 @@ for key, val in defaults.items():
 # ---------------------------------------------------------------------------
 page = st.sidebar.radio(
     "Navigate",
-    ["Log Workout", "Programs", "Analytics"],
+    ["Log Workout", "Programs", "Analytics","Admin"],
     index=0,
 )
 
@@ -69,3 +69,10 @@ elif page == "Programs":
 elif page == "Analytics":
     st.title("Analytics")
     st.info("Analytics coming soon.")
+
+elif page == "Admin":
+    st.title("Admin")
+    if st.button("Initialize DB + Seed Exercises"):
+        from seed import seed_exercises
+        seed_exercises()
+        st.success("Done — exercises seeded.")
