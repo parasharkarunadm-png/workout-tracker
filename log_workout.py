@@ -296,7 +296,6 @@ def create_session(program_day_id):
     return session_id
 
 def get_open_session_for_day(program_day_id: int):
-    """Return today's open session for this day if one exists."""
     from datetime import date
     db = SessionLocal()
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -305,15 +304,23 @@ def get_open_session_for_day(program_day_id: int):
         .filter(
             Session.program_day_id == program_day_id,
             Session.date >= today_start,
-            Session.duration_mins == None  # not yet finished
+            Session.duration_mins == None
         )
         .order_by(Session.date.desc())
         .first()
     )
-    session_id = session.id if session else None
-    date_val = session.date if session else None
+    if session is None:
+        db.close()
+        return None, None
+
+    # Only resumable if sets were actually logged
+    has_sets = db.query(LoggedSet).filter(LoggedSet.session_id == session.id).count() > 0
     db.close()
-    return session_id, date_val
+
+    if not has_sets:
+        return None, None
+
+    return session.id, session.date
 
 
 def rehydrate_session(session_id: int, program_day_id: int, session_date: datetime):
