@@ -224,9 +224,12 @@ def undo_last_set():
 # ---------------------------------------------------------------------------
 def handle_log(key, exercise_id, program_set_id, set_num,
                weight, reps, rir, set_type="working"):
-    now       = datetime.utcnow()
-    last_time = st.session_state.last_set_time
-    rest_secs = int((now - last_time).total_seconds()) if last_time else 0
+    now = datetime.utcnow()
+
+    # Per-exercise rest: only counts time since last set of THIS exercise
+    per_ex = st.session_state.get("last_set_time_by_exercise", {})
+    last_ex_time = per_ex.get(exercise_id)
+    rest_secs = int((now - last_ex_time).total_seconds()) if last_ex_time else 0
 
     is_pr, db_id = log_set(
         session_id     = st.session_state.session_id,
@@ -249,10 +252,14 @@ def handle_log(key, exercise_id, program_set_id, set_num,
         "db_id"    : db_id,
         "set_type" : set_type,
     }
+
+    # Update both global (for header display) and per-exercise (for rest calc)
     st.session_state.last_logged_key  = key
     st.session_state.last_set_time    = now
     st.session_state.first_set_logged = True
-
+    if "last_set_time_by_exercise" not in st.session_state:
+        st.session_state.last_set_time_by_exercise = {}
+    st.session_state.last_set_time_by_exercise[exercise_id] = now
 
 # ---------------------------------------------------------------------------
 # Set label helper
@@ -288,6 +295,79 @@ def create_session(program_day_id):
     db.close()
     return session_id
 
+def get_open_session_for_day(program_day_id: int):
+    """Return today's open session for this day if one exists."""
+    from datetime import date
+    db = SessionLocal()
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    session = (
+        db.query(Session)
+        .filter(
+            Session.program_day_id == program_day_id,
+            Session.date >= today_start,
+            Session.duration_mins == None  # not yet finished
+        )
+        .order_by(Session.date.desc())
+        .first()
+    )
+    session_id = session.id if session else None
+    date_val = session.date if session else None
+    db.close()
+    return session_id, date_val
+
+
+def rehydrate_session(session_id: int, program_day_id: int, session_date: datetime):
+    """Rebuild session state from DB logged_sets for a resumed session."""
+    db = SessionLocal()
+    sets = (
+        db.query(LoggedSet)
+        .filter(LoggedSet.session_id == session_id)
+        .order_by(LoggedSet.logged_at)
+        .all()
+    )
+
+    logged_sets = {}
+    adhoc_sets = {}
+    adhoc_counter = -1
+    last_logged_key = None
+    last_logged_at = None
+
+    for s in sets:
+        if s.program_set_id is not None:
+            key = s.program_set_id
+        else:
+            key = adhoc_counter
+            adhoc_counter -= 1
+            eid = s.exercise_id
+            if eid not in adhoc_sets:
+                adhoc_sets[eid] = []
+            adhoc_sets[eid].append(key)
+
+        logged_sets[key] = {
+            "weight_lb": s.weight_lb,
+            "reps":      s.reps,
+            "rir":       s.rir,
+            "rest_secs": s.rest_secs,
+            "is_pr":     s.is_pr,
+            "db_id":     s.id,
+            "set_type":  s.set_type,
+        }
+        last_logged_key = key
+        last_logged_at = s.logged_at
+
+    db.close()
+
+    st.session_state.session_id         = session_id
+    st.session_state.program_day_id     = program_day_id
+    st.session_state.session_started    = True
+    st.session_state.session_start_time = session_date
+    st.session_state.logged_sets        = logged_sets
+    st.session_state.adhoc_sets         = adhoc_sets
+    st.session_state.adhoc_counter      = adhoc_counter
+    st.session_state.last_logged_key    = last_logged_key
+    st.session_state.last_set_time      = last_logged_at
+    st.session_state.first_set_logged   = len(logged_sets) > 0
+
 
 # ---------------------------------------------------------------------------
 # Screen 1 — Program day selector
@@ -322,15 +402,34 @@ def screen_select_day():
 
     st.divider()
 
-    if st.button("Start Session", type="primary", use_container_width=True):
-        session_id = create_session(selected_day_id)
-        st.session_state.session_id         = session_id
-        st.session_state.program_day_id     = selected_day_id
-        st.session_state.session_started    = True
-        st.session_state.last_set_time      = None
-        st.session_state.session_start_time = datetime.utcnow()
-        st.session_state.first_set_logged   = False
-        st.rerun()
+    open_session_id, open_session_date = get_open_session_for_day(selected_day_id)
+
+    if open_session_id:
+        st.info(f"⚠️ An open session exists for this day from today. Resume it?")
+        col1, col2 = st.columns(2)
+        if col1.button("Resume Session", type="primary", use_container_width=True):
+            rehydrate_session(open_session_id, selected_day_id, open_session_date)
+            st.rerun()
+        if col2.button("Start Fresh", use_container_width=True):
+            session_id = create_session(selected_day_id)
+            st.session_state.session_id         = session_id
+            st.session_state.program_day_id     = selected_day_id
+            st.session_state.session_started    = True
+            st.session_state.last_set_time      = None
+            st.session_state.session_start_time = datetime.utcnow()
+            st.session_state.first_set_logged   = False
+            st.rerun()
+    else:
+        if st.button("Start Session", type="primary", use_container_width=True):
+            session_id = create_session(selected_day_id)
+            st.session_state.session_id         = session_id
+            st.session_state.program_day_id     = selected_day_id
+            st.session_state.session_started    = True
+            st.session_state.last_set_time      = None
+            st.session_state.session_start_time = datetime.utcnow()
+            st.session_state.first_set_logged   = False
+            st.rerun()
+
 
 
 # ---------------------------------------------------------------------------
@@ -472,9 +571,10 @@ def screen_logger():
         for key, val in {
             "session_started": False, "session_id": None,
             "program_day_id": None, "last_set_time": None,
+            "last_set_time_by_exercise": {},
             "session_start_time": None, "first_set_logged": False,
             "logged_sets": {}, "adhoc_sets": {}, "adhoc_counter": -1,
-            "last_logged_key": None,
+            "last_logged_key": None
         }.items():
             st.session_state[key] = val
 

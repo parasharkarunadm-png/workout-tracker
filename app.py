@@ -41,6 +41,7 @@ defaults = {
     "last_logged_key":    None,   # tracks last logged set for undo
     "show_summary":       False,
     "summary_data":       None,
+    "last_set_time_by_exercise": {},
 }
 for key, val in defaults.items():
     if key not in st.session_state:
