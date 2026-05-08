@@ -491,10 +491,10 @@ def screen_logger():
                 continue
 
             st.markdown(f"**Set {set_label}**{type_tag} — Target: {rep_label} reps{pct_label}")
-            c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
-            weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{psid}")
-            reps   = c2.number_input("Reps", min_value=0, value=s["target_reps"] if s["target_reps"] else None, placeholder="Reps", key=f"reps_{psid}")
-            rir    = c3.number_input("RIR",  min_value=0, value=s["target_rir"]  if s["target_rir"]  else None, placeholder="RIR",  key=f"rir_{psid}")
+            c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
+            weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{psid}", label_visibility="collapsed")
+            reps   = c2.number_input("Reps", min_value=0,   value=s["target_reps"] if s["target_reps"] else None, placeholder="Reps", key=f"reps_{psid}", label_visibility="collapsed")
+            rir    = c3.number_input("RIR",  min_value=0,   value=s["target_rir"]  if s["target_rir"]  else None, placeholder="RIR",  key=f"rir_{psid}",  label_visibility="collapsed")
 
             if c4.button("Log", key=f"log_{psid}"):
                 if weight is None:
@@ -518,10 +518,10 @@ def screen_logger():
                 st.success(f"✅ Set {adhoc_set_num} (ad-hoc) — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}")
             else:
                 st.markdown(f"**Set {adhoc_set_num}** — Ad-hoc")
-                c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
-                weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{akey}")
-                reps   = c2.number_input("Reps", min_value=0,              value=None, placeholder="Reps", key=f"reps_{akey}")
-                rir    = c3.number_input("RIR",  min_value=0,              value=None, placeholder="RIR",  key=f"rir_{akey}")
+                c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
+                weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{akey}", label_visibility="collapsed")
+                reps   = c2.number_input("Reps", min_value=0,              value=None, placeholder="Reps", key=f"reps_{akey}", label_visibility="collapsed")
+                rir    = c3.number_input("RIR",  min_value=0,              value=None, placeholder="RIR",  key=f"rir_{akey}",  label_visibility="collapsed")
 
                 if c4.button("Log", key=f"log_{akey}"):
                     if weight is None:
