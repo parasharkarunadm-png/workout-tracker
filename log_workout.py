@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from db import SessionLocal, Program, ProgramDay, Session, LoggedSet
+from db import SessionLocal, Program, ProgramDay, Session, LoggedSet,get_swap_candidates
 
 
 # ---------------------------------------------------------------------------
@@ -471,8 +471,32 @@ def screen_logger():
         eid       = ex["exercise_id"]
         last_best = get_last_best_set(eid, st.session_state.session_id)
 
-        st.markdown(f"#### {ex['exercise_name']}")
-        st.caption(last_best)
+        col_name, col_swap = st.columns([5, 1])
+        swapped_id = st.session_state.get("exercise_swaps", {}).get(eid)
+        if swapped_id:
+            from db import SessionLocal, Exercise as Ex
+            db = SessionLocal()
+            swapped_ex = db.query(Ex).filter(Ex.id == swapped_id).first()
+            db.close()
+        else:
+            swapped_ex = None
+        display_name = swapped_ex.name if swapped_ex else ex['exercise_name']
+        col_name.markdown(f"#### {display_name}")
+        with col_swap.popover("🔄"):
+            candidates = get_swap_candidates(eid, st.session_state.program_day_id)
+            if not candidates:
+                st.caption("No alternatives available.")
+            else:
+                options = {f"{c['name']} ({c['equipment']})": c["exercise_id"] for c in candidates}
+                selected_label = st.radio("Swap to:", list(options.keys()), key=f"swap_radio_{eid}")
+                if st.button("Confirm Swap", key=f"swap_confirm_{eid}"):
+                    if "exercise_swaps" not in st.session_state:
+                        st.session_state.exercise_swaps = {}
+                    st.session_state.exercise_swaps[eid] = options[selected_label]
+                    st.rerun()
+        effective_eid = st.session_state.get("exercise_swaps", {}).get(eid, eid)
+        last_best = get_last_best_set(effective_eid, st.session_state.session_id)
+        st.caption(f"🔄 Swapped to: **{swapped_ex.name}** | {last_best}" if swapped_ex else last_best)
 
         # Planned sets
         for idx, s in enumerate(ex["sets"]):
@@ -581,7 +605,7 @@ def screen_logger():
             "last_set_time_by_exercise": {},
             "session_start_time": None, "first_set_logged": False,
             "logged_sets": {}, "adhoc_sets": {}, "adhoc_counter": -1,
-            "last_logged_key": None
+            "last_logged_key": None,"exercise_swaps": {}
         }.items():
             st.session_state[key] = val
 

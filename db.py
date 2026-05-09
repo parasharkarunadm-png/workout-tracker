@@ -142,3 +142,50 @@ def get_db():
         yield db
     finally:
         db.close()
+def get_swap_candidates(exercise_id: int, program_day_id: int) -> list:
+    """
+    Return exercises that can swap for the given exercise.
+    Filters by same primary_muscle + movement_pattern.
+    Excludes the original exercise and any already scheduled in this program day.
+    """
+    db = SessionLocal()
+
+    # Get the original exercise
+    original = db.query(Exercise).filter(Exercise.id == exercise_id).first()
+    if not original:
+        db.close()
+        return []
+
+    # Get all exercise_ids already scheduled in this program day
+    scheduled_ids = (
+        db.query(ProgramSet.exercise_id)
+        .filter(ProgramSet.day_id == program_day_id)
+        .distinct()
+        .all()
+    )
+    scheduled_ids = {row[0] for row in scheduled_ids}
+
+    # Query candidates — same muscle + pattern, exclude scheduled
+    candidates = (
+        db.query(Exercise)
+        .filter(
+            Exercise.primary_muscle   == original.primary_muscle,
+            Exercise.movement_pattern == original.movement_pattern,
+            Exercise.id               != exercise_id,
+            Exercise.id.notin_(scheduled_ids),
+        )
+        .order_by(Exercise.name)
+        .all()
+    )
+
+    result = [
+        {
+            "exercise_id": ex.id,
+            "name":        ex.name,
+            "equipment":   ex.equipment,
+        }
+        for ex in candidates
+    ]
+
+    db.close()
+    return result

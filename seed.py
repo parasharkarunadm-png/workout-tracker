@@ -23,6 +23,7 @@ EXERCISES = [
     {"name": "Dumbbell Fly",                  "primary_muscle": "chest",      "equipment": "dumbbell",   "movement_pattern": "isolation"},
     {"name": "Incline Cable Fly",             "primary_muscle": "chest",      "equipment": "cable",      "movement_pattern": "isolation"},
     {"name": "Incline Chest Press",           "primary_muscle": "chest",      "equipment": "machine",    "movement_pattern": "push_horizontal"},
+    {"name": "Machine Chest Press",   "primary_muscle": "chest",     "equipment": "machine", "movement_pattern": "push_horizontal"},
 
     # --- Back ---
     {"name": "Barbell Row",                   "primary_muscle": "back",       "equipment": "barbell",    "movement_pattern": "pull_horizontal"},
@@ -37,6 +38,8 @@ EXERCISES = [
     {"name": "Braced Dumbbell Row",           "primary_muscle": "back",       "equipment": "dumbbell",   "movement_pattern": "pull_horizontal"},
     {"name": "Close Grip Pulldown",           "primary_muscle": "back",       "equipment": "cable",      "movement_pattern": "pull_vertical"},
     {"name": "Hyperextension",                "primary_muscle": "back",       "equipment": "bodyweight", "movement_pattern": "hinge"},
+    {"name": "Machine Row",           "primary_muscle": "back",      "equipment": "machine", "movement_pattern": "pull_horizontal"},
+    {"name": "Machine Pulldown",      "primary_muscle": "back",      "equipment": "machine", "movement_pattern": "pull_vertical"},
 
     # --- Shoulders ---
     {"name": "Overhead Press",                "primary_muscle": "shoulders",  "equipment": "barbell",    "movement_pattern": "push_vertical"},
@@ -47,6 +50,8 @@ EXERCISES = [
     {"name": "Upright Row",                   "primary_muscle": "shoulders",  "equipment": "barbell",    "movement_pattern": "pull_vertical"},
     {"name": "Bent Over Lateral Raise",       "primary_muscle": "shoulders",  "equipment": "dumbbell",   "movement_pattern": "isolation"},
     {"name": "Barbell Shrug",                 "primary_muscle": "shoulders",  "equipment": "barbell",    "movement_pattern": "isolation"},
+    {"name": "Machine Shoulder Press","primary_muscle": "shoulders", "equipment": "machine", "movement_pattern": "push_vertical"},
+    {"name": "Machine Lateral Raise", "primary_muscle": "shoulders", "equipment": "machine", "movement_pattern": "isolation"},
 
     # --- Triceps ---
     {"name": "Tricep Pushdown",               "primary_muscle": "triceps",    "equipment": "cable",      "movement_pattern": "isolation"},
@@ -58,6 +63,9 @@ EXERCISES = [
     {"name": "Cambered Bar Tricep Extension", "primary_muscle": "triceps",    "equipment": "barbell",    "movement_pattern": "isolation"},
     {"name": "Cable Pressdown with Rope",     "primary_muscle": "triceps",    "equipment": "cable",      "movement_pattern": "isolation"},
     {"name": "Cable Kickback",                "primary_muscle": "triceps",    "equipment": "cable",      "movement_pattern": "isolation"},
+    {"name": "Machine Dip",           "primary_muscle": "triceps",   "equipment": "machine", "movement_pattern": "push_horizontal"},
+    {"name": "Machine Tricep Extension","primary_muscle": "triceps", "equipment": "machine", "movement_pattern": "isolation"},
+
 
     # --- Biceps ---
     {"name": "Barbell Curl",                  "primary_muscle": "biceps",     "equipment": "barbell",    "movement_pattern": "isolation"},
@@ -68,6 +76,7 @@ EXERCISES = [
     {"name": "Preacher Curl",                 "primary_muscle": "biceps",     "equipment": "machine",    "movement_pattern": "isolation"},
     {"name": "Dumbbell Concentration Curl",   "primary_muscle": "biceps",     "equipment": "dumbbell",   "movement_pattern": "isolation"},
     {"name": "Spider Curl",                   "primary_muscle": "biceps",     "equipment": "dumbbell",   "movement_pattern": "isolation"},
+    {"name": "Machine Curl",          "primary_muscle": "biceps",    "equipment": "machine", "movement_pattern": "isolation"},
 
     # --- Legs ---
     {"name": "Barbell Squat",                 "primary_muscle": "quads",      "equipment": "barbell",    "movement_pattern": "squat"},

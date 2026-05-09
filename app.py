@@ -42,6 +42,7 @@ defaults = {
     "show_summary":       False,
     "summary_data":       None,
     "last_set_time_by_exercise": {},
+    "exercise_swaps": {}
 }
 for key, val in defaults.items():
     if key not in st.session_state:
