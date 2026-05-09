@@ -25,6 +25,15 @@ class Exercise(Base):
     program_sets = relationship("ProgramSet", back_populates="exercise")
     logged_sets  = relationship("LoggedSet",  back_populates="exercise")
 
+class ExerciseAlias(Base):
+    __tablename__ = "exercise_aliases"
+
+    id          = Column(Integer, primary_key=True)
+    exercise_id = Column(Integer, ForeignKey("exercises.id"), nullable=False)
+    alias       = Column(String, nullable=False, unique=True)  # always lowercase
+
+    exercise = relationship("Exercise", backref="aliases")
+
 
 # ---------------------------------------------------------------------------
 # Layer 2 — Program structure
