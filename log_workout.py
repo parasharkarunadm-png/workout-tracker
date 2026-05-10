@@ -481,7 +481,8 @@ def screen_logger():
         else:
             swapped_ex = None
         display_name = swapped_ex.name if swapped_ex else ex['exercise_name']
-        col_name.markdown(f"#### {display_name}")
+        total_sets = len(ex["sets"])
+        col_name.markdown(f"#### {display_name} ({total_sets} sets)")
         with col_swap.popover("🔄"):
             candidates = get_swap_candidates(eid, st.session_state.program_day_id)
             if not candidates:
