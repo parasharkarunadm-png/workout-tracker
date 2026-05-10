@@ -81,8 +81,8 @@ elif page == "Programs":
     st.info("Program manager coming soon.")
 
 elif page == "Analytics":
-    st.title("Analytics")
-    st.info("Analytics coming soon.")
+    import analytics
+    analytics.render()
 
 elif page == "Admin":
     st.title("Admin")

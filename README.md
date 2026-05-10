@@ -8,12 +8,13 @@ Light weight web app to replicate functionalities of the popular workout app Mac
 
 ## Stack
 
-- **Framework**: Streamlit
-- **Database**: SQLite via SQLAlchemy
+- **Framework**: Streamlit 1.50
+- **Database**: PostgreSQL on Railway (SQLite locally via fallback)
+- **ORM**: SQLAlchemy
 - **Charts**: Plotly
 - **Data parsing**: pandas + openpyxl
-- **Hosting**: Streamlit Community Cloud (free tier)
-
+- **Auto-refresh**: streamlit-autorefresh (60s interval during active session)
+- **Hosting**: Railway (primary) + Streamlit Community Cloud (secondary)
 ---
 
 ## Setup
@@ -341,13 +342,128 @@ Files: `phat_import.xlsx`
 
 ---
 
-## Upcoming (Sprint 3+)
+### Step 18 — Railway Deployment
+Files: requirements.txt, db.py
 
-- Session summary screen on Finish
-- Streamlit Community Cloud deployment
-- Programs page with import UI
-- PHAT weeks 2–4 with progressive percentages
-- Analytics: load trend, volume trend, rest interval, stall detection
-- Exercise swap with muscle/movement filter + search
-- Full exercise library expansion to 150–200 exercises
+- Deployed to Railway (railway.app) as primary hosting platform
+- PostgreSQL plugin added on Railway — replaces SQLite for production
+- db.py updated to read DATABASE_URL from environment variable with SQLite fallback for local dev
+- psycopg2-binary added to requirements.txt
+- Verified: app live at https://workout-tracker-production-56cc.up.railway.app/
+
+
+### Step 19 — Streamlit Community Cloud Deployment
+Files: .streamlit/config.toml
+
+- Secondary deployment on Streamlit CC pointing to same Railway Postgres via DATABASE_PUBLIC_URL
+- DATABASE_URL secret added in CC dashboard
+- Both deployments share the same Railway Postgres — data is consistent across both URLs
+- Custom dark theme added via .streamlit/config.toml:
+
+primaryColor: #4da6ff
+backgroundColor: #0e1117
+secondaryBackgroundColor: #1a1a2e
+
+Step 20 — Set Type Display Fix
+Files: log_workout.py
+
+- Set labels now render with type-aware prefixes: W1, W2 for warmup, 1, 2, 3 for working, D1, D2 for dropsets
+- normalize_set_type() helper normalizes notes field from program import to consistent set type strings
+- SET_TYPE_PRIORITY dict added for correct sort order: warmup → working → amrap → dropset
+- get_set_label() helper computes correct label per set based on type and position
+
+
+### Step 21 — Session Resumability
+Files: log_workout.py
+
+- App crash or tab close no longer loses workout progress
+- get_open_session_for_day() detects an unfinished session for the selected day with at least one logged set
+- rehydrate_session() rebuilds full session state from DB — restores logged_sets, adhoc_sets, last_logged_key, and timers
+- Resume prompt appears on Screen 1 when an open session is detected — offers Resume or Start Fresh
+- Empty sessions (0 logged sets) are ignored silently — no false resume prompts
+
+
+### Step 22 — Per-Exercise Rest Timer
+Files: log_workout.py, app.py
+
+- Rest timer now tracks time since last set of the same exercise rather than any set globally
+- last_set_time_by_exercise dict added to session state — keyed by exercise_id
+- Eliminates inflated rest times caused by walking between machines
+- Global last_set_time retained for header display only
+
+### Step 23 — Mobile Layout Improvements
+Files: log_workout.py
+
+- Input column ratio changed from [2,2,2,2] to [3,2,2,2] — weight field given more room
+- label_visibility="collapsed" added to all number inputs — removes label row above each field, reduces vertical scroll
+- Set count added to exercise heading: Barbell Squat (4 sets)
+
+### Step 24 — Vocabulary Migration
+Files: seed.py, db.py
+
+- movement_pattern vocabulary expanded from 5 values to 7:
+- push → push_horizontal / push_vertical
+- pull → pull_horizontal / pull_vertical
+- hinge, squat, isolation unchanged
+- All 55 exercises remapped to new vocabulary
+= 3 incorrect classifications fixed: Hyperextension → hinge, Barbell Shrug → isolation, Upright Row → pull_vertical
+- ExerciseAlias model added to db.py — maps common name variants to canonical exercise names
+- 215 aliases seeded via seed_aliases.py covering PHAT, Dorian Yates, and common variant names
+- Migration run against live Railway Postgres via migrate_movement_patterns.py
+
+### Step 25 — Importer Alias Resolution
+Files: importer.py
+
+- Importer now resolves exercise names via canonical match first, alias second
+- resolve_exercise() helper tries exact name match then alias lookup
+- Unmatched names report now includes instructions to add alias or fix name
+- Import summary shows count of rows resolved via alias
+- Enables importing programs with non-standard exercise names without manual Excel editing
+
+### Step 26 — Exercise Swap
+Files: log_workout.py, db.py, app.py
+
+- 🔄 swap button added to each exercise header in Screen 2
+-  get_swap_candidates() in db.py filters by same primary_muscle + movement_pattern, excludes exercises already scheduled in the current program day
+- Swap is session-only — does not modify program structure in DB
+exercise_swaps dict in session state: original_exercise_id → swapped_exercise_id
+- Swapped exercise name shown in header, last best set updates to reflect swapped exercise history
+- Equipment shown in swap candidate list for informed selection
+- Machine exercises added to library: Machine Dip, Machine Chest Press, Machine Shoulder Press, Machine Row, Machine Pulldown, Machine Tricep Extension, Machine Curl, Machine Lateral Raise
+
+
+### Step 27 — Collapsible Exercise Layout
+Files: log_workout.py, app.py
+
+- Screen 2 redesigned from full-scroll to collapsible exercise layout
+- Each exercise shows as a header row with name, set count, and swap button
+- Tap to expand/collapse sets for that exercise
+- Expand state persisted in expanded_exercises session state set — survives reruns
+- Expander label shows last best set and X/Y sets logged progress at a glance
+- Ad-hoc sets and ➕ Add Set live inside the expander
+
+
+### Step 28 — Analytics Page (Sprint 3)
+Files: analytics.py, app.py
+
+- New analytics.py page wired into sidebar navigation
+- Program-first navigation: select program → select exercise → view charts
+Load trend: top set weight per session over time (working + amrap sets only, excludes warmups)
+- Rest interval chart: average rest per session in minutes
+- PR history: table of all PR sets with date, weight, reps, set type
+- Empty session filtering: sessions with 0 logged sets excluded from all queries
+- Charts styled to match app dark theme
+
+## Upcoming
+
+- PR logic fix — first ever set should not be flagged as PR (baseline, not achievement)
+- Volume trend — weekly sets × reps × weight per muscle group (needs 3-4 weeks of data)
+- Stall detection — flag exercises where top set hasn't increased in 3+ sessions
+- Programs page — view imported programs, delete with cascade
+- Beast Slayer 2.0 import
+- Exercise library expansion to 150-200 exercises (ExRx.net as reference)
+- Fuzzy name matcher in importer (rapidfuzz)
+- Per-set undo button (currently last set only)
 - Data export to CSV
+- Error handling — wrap all db writes in try/except
+- Cache heavy analytics queries with @st.cache_data
