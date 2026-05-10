@@ -454,7 +454,7 @@ def screen_logger():
 
     day_label = get_day_label(st.session_state.program_day_id)
 
-    # --- Sticky header — timers only ---
+    # --- Header — timers ---
     st.markdown(f"### {day_label}")
     col1, col2 = st.columns(2)
     col1.metric("Session", fmt_duration(session_secs))
@@ -468,21 +468,26 @@ def screen_logger():
         return
 
     for ex in exercises:
-        eid       = ex["exercise_id"]
-        last_best = get_last_best_set(eid, st.session_state.session_id)
+        eid = ex["exercise_id"]
 
-        col_name, col_swap = st.columns([5, 1])
+        # --- Resolve swap ---
         swapped_id = st.session_state.get("exercise_swaps", {}).get(eid)
         if swapped_id:
-            from db import SessionLocal, Exercise as Ex
             db = SessionLocal()
-            swapped_ex = db.query(Ex).filter(Ex.id == swapped_id).first()
+            swapped_ex = db.query(Exercise).filter(Exercise.id == swapped_id).first()
             db.close()
         else:
             swapped_ex = None
-        display_name = swapped_ex.name if swapped_ex else ex['exercise_name']
-        total_sets = len(ex["sets"])
+
+        effective_eid = swapped_id if swapped_id else eid
+        display_name  = swapped_ex.name if swapped_ex else ex["exercise_name"]
+        total_sets    = len(ex["sets"])
+        last_best     = get_last_best_set(effective_eid, st.session_state.session_id)
+
+        # --- Exercise header row: name + swap button ---
+        col_name, col_swap = st.columns([5, 1])
         col_name.markdown(f"#### {display_name} ({total_sets} sets)")
+
         with col_swap.popover("🔄"):
             candidates = get_swap_candidates(eid, st.session_state.program_day_id)
             if not candidates:
@@ -495,82 +500,99 @@ def screen_logger():
                         st.session_state.exercise_swaps = {}
                     st.session_state.exercise_swaps[eid] = options[selected_label]
                     st.rerun()
-        effective_eid = st.session_state.get("exercise_swaps", {}).get(eid, eid)
-        last_best = get_last_best_set(effective_eid, st.session_state.session_id)
-        st.caption(f"🔄 Swapped to: **{swapped_ex.name}** | {last_best}" if swapped_ex else last_best)
 
-        # Planned sets
-        for idx, s in enumerate(ex["sets"]):
-            psid      = s["program_set_id"]
-            set_type  = s.get("set_type", "working")
-            set_label = get_set_label(ex["sets"], idx)
-            rep_label = "AMRAP" if (s["target_reps"] is None or set_type == "amrap") else str(s["target_reps"])
-            pct_label = f" @ {int(s['target_pct_1rm']*100)}% 1RM" if s["target_pct_1rm"] else ""
-            type_tag  = f" `{set_type}`" if set_type != "working" else ""
+        # --- Expander for sets ---
+        logged_count = sum(
+            1 for s in ex["sets"]
+            if s["program_set_id"] in st.session_state.logged_sets
+        )
+        expander_label = f"{last_best} — {logged_count}/{total_sets} logged"
 
-            if psid in st.session_state.logged_sets:
-                logged   = st.session_state.logged_sets[psid]
-                pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
-                rest_str = f" | Rest: {fmt_duration(logged['rest_secs'])}" if logged["rest_secs"] else ""
-                st.success(f"✅ Set {set_label}{type_tag} — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}")
-                continue
-
-            st.markdown(f"**Set {set_label}**{type_tag} — Target: {rep_label} reps{pct_label}")
-            c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
-            weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{psid}", label_visibility="collapsed")
-            reps   = c2.number_input("Reps", min_value=0,   value=s["target_reps"] if s["target_reps"] else None, placeholder="Reps", key=f"reps_{psid}", label_visibility="collapsed")
-            rir    = c3.number_input("RIR",  min_value=0,   value=s["target_rir"]  if s["target_rir"]  else None, placeholder="RIR",  key=f"rir_{psid}",  label_visibility="collapsed")
-
-            if c4.button("Log", key=f"log_{psid}"):
-                if weight is None:
-                    st.warning("Enter weight before logging.")
-                    st.stop()
-                try:
-                    handle_log(psid, eid, psid, s["set_num"], weight, reps, rir, set_type)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-        # Ad-hoc sets
-        adhoc_keys    = st.session_state.adhoc_sets.get(eid, [])
-        adhoc_set_num = len(ex["sets"]) + 1
-
-        for akey in adhoc_keys:
-            if akey in st.session_state.logged_sets:
-                logged   = st.session_state.logged_sets[akey]
-                pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
-                rest_str = f" | Rest: {fmt_duration(logged['rest_secs'])}" if logged["rest_secs"] else ""
-                st.success(f"✅ Set {adhoc_set_num} (ad-hoc) — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}")
+        is_open = eid in st.session_state.get("expanded_exercises", set())
+        if st.button(f"{'▼' if is_open else '▶'} {expander_label}", key=f"expand_{eid}", use_container_width=True):
+            expanded = st.session_state.get("expanded_exercises", set())
+            if eid in expanded:
+                expanded.discard(eid)
             else:
-                st.markdown(f"**Set {adhoc_set_num}** — Ad-hoc")
-                c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
-                weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{akey}", label_visibility="collapsed")
-                reps   = c2.number_input("Reps", min_value=0,              value=None, placeholder="Reps", key=f"reps_{akey}", label_visibility="collapsed")
-                rir    = c3.number_input("RIR",  min_value=0,              value=None, placeholder="RIR",  key=f"rir_{akey}",  label_visibility="collapsed")
+                expanded.add(eid)
+            st.session_state.expanded_exercises = expanded
+            st.rerun()
 
-                if c4.button("Log", key=f"log_{akey}"):
+        if is_open:
+            if swapped_ex:
+                st.caption(f"🔄 Swapped from {ex['exercise_name']}")
+
+            # Planned sets
+            for idx, s in enumerate(ex["sets"]):
+                psid      = s["program_set_id"]
+                set_type  = s.get("set_type", "working")
+                set_label = get_set_label(ex["sets"], idx)
+                rep_label = "AMRAP" if (s["target_reps"] is None or set_type == "amrap") else str(s["target_reps"])
+                pct_label = f" @ {int(s['target_pct_1rm']*100)}% 1RM" if s["target_pct_1rm"] else ""
+                type_tag  = f" `{set_type}`" if set_type != "working" else ""
+
+                if psid in st.session_state.logged_sets:
+                    logged   = st.session_state.logged_sets[psid]
+                    pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
+                    rest_str = f" | Rest: {fmt_duration(logged['rest_secs'])}" if logged["rest_secs"] else ""
+                    st.success(f"✅ Set {set_label}{type_tag} — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}")
+                    continue
+
+                st.markdown(f"**Set {set_label}**{type_tag} — Target: {rep_label} reps{pct_label}")
+                c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
+                weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{psid}", label_visibility="collapsed")
+                reps   = c2.number_input("Reps", min_value=0,   value=s["target_reps"] if s["target_reps"] else None, placeholder="Reps", key=f"reps_{psid}", label_visibility="collapsed")
+                rir    = c3.number_input("RIR",  min_value=0,   value=s["target_rir"]  if s["target_rir"]  else None, placeholder="RIR",  key=f"rir_{psid}",  label_visibility="collapsed")
+
+                if c4.button("Log", key=f"log_{psid}"):
                     if weight is None:
                         st.warning("Enter weight before logging.")
                         st.stop()
                     try:
-                        handle_log(akey, eid, None, adhoc_set_num, weight, reps, rir, "working")
+                        handle_log(psid, effective_eid, psid, s["set_num"], weight, reps, rir, set_type)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-            adhoc_set_num += 1
+            # Ad-hoc sets
+            adhoc_keys    = st.session_state.adhoc_sets.get(eid, [])
+            adhoc_set_num = len(ex["sets"]) + 1
 
-        if st.button("➕ Add Set", key=f"add_{eid}"):
-            akey = st.session_state.adhoc_counter
-            st.session_state.adhoc_counter -= 1
-            if eid not in st.session_state.adhoc_sets:
-                st.session_state.adhoc_sets[eid] = []
-            st.session_state.adhoc_sets[eid].append(akey)
-            st.rerun()
+            for akey in adhoc_keys:
+                if akey in st.session_state.logged_sets:
+                    logged   = st.session_state.logged_sets[akey]
+                    pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
+                    rest_str = f" | Rest: {fmt_duration(logged['rest_secs'])}" if logged["rest_secs"] else ""
+                    st.success(f"✅ Set {adhoc_set_num} (ad-hoc) — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}")
+                else:
+                    st.markdown(f"**Set {adhoc_set_num}** — Ad-hoc")
+                    c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
+                    weight = c1.number_input("lb",   min_value=0.0, step=0.5, value=None, placeholder="lb",   key=f"weight_{akey}", label_visibility="collapsed")
+                    reps   = c2.number_input("Reps", min_value=0,              value=None, placeholder="Reps", key=f"reps_{akey}", label_visibility="collapsed")
+                    rir    = c3.number_input("RIR",  min_value=0,              value=None, placeholder="RIR",  key=f"rir_{akey}",  label_visibility="collapsed")
 
-        st.divider()
+                    if c4.button("Log", key=f"log_{akey}"):
+                        if weight is None:
+                            st.warning("Enter weight before logging.")
+                            st.stop()
+                        try:
+                            handle_log(akey, effective_eid, None, adhoc_set_num, weight, reps, rir, "working")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+
+                adhoc_set_num += 1
+
+            if st.button("➕ Add Set", key=f"add_{eid}"):
+                akey = st.session_state.adhoc_counter
+                st.session_state.adhoc_counter -= 1
+                if eid not in st.session_state.adhoc_sets:
+                    st.session_state.adhoc_sets[eid] = []
+                st.session_state.adhoc_sets[eid].append(akey)
+                st.rerun()
 
     # --- Bottom actions ---
+    st.divider()
     if st.session_state.last_logged_key is not None:
         if st.button("↩️ Undo Last Set", use_container_width=True):
             undo_last_set()
@@ -601,12 +623,19 @@ def screen_logger():
         }
 
         for key, val in {
-            "session_started": False, "session_id": None,
-            "program_day_id": None, "last_set_time": None,
+            "session_started"          : False,
+            "session_id"               : None,
+            "program_day_id"           : None,
+            "last_set_time"            : None,
             "last_set_time_by_exercise": {},
-            "session_start_time": None, "first_set_logged": False,
-            "logged_sets": {}, "adhoc_sets": {}, "adhoc_counter": -1,
-            "last_logged_key": None,"exercise_swaps": {}
+            "session_start_time"       : None,
+            "first_set_logged"         : False,
+            "logged_sets"              : {},
+            "adhoc_sets"               : {},
+            "adhoc_counter"            : -1,
+            "last_logged_key"          : None,
+            "exercise_swaps"           : {},
+            "expanded_exercises": set(),
         }.items():
             st.session_state[key] = val
 
