@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from db import SessionLocal, Program, ProgramDay, Session, LoggedSet,get_swap_candidates
+from db import SessionLocal, Program, ProgramDay, Session, LoggedSet,get_swap_candidates,Exercise
 
 
 # ---------------------------------------------------------------------------
@@ -489,17 +489,20 @@ def screen_logger():
         col_name.markdown(f"#### {display_name} ({total_sets} sets)")
 
         with col_swap.popover("🔄"):
-            candidates = get_swap_candidates(eid, st.session_state.program_day_id)
-            if not candidates:
-                st.caption("No alternatives available.")
-            else:
-                options = {f"{c['name']} ({c['equipment']})": c["exercise_id"] for c in candidates}
-                selected_label = st.radio("Swap to:", list(options.keys()), key=f"swap_radio_{eid}")
-                if st.button("Confirm Swap", key=f"swap_confirm_{eid}"):
-                    if "exercise_swaps" not in st.session_state:
-                        st.session_state.exercise_swaps = {}
-                    st.session_state.exercise_swaps[eid] = options[selected_label]
-                    st.rerun()
+            try:
+                candidates = get_swap_candidates(eid, st.session_state.program_day_id)
+                if not candidates:
+                    st.caption("No alternatives available.")
+                else:
+                    options = {f"{c['name']} ({c['equipment']})": c["exercise_id"] for c in candidates}
+                    selected_label = st.radio("Swap to:", list(options.keys()), key=f"swap_radio_{eid}")
+                    if st.button("Confirm Swap", key=f"swap_confirm_{eid}"):
+                        if "exercise_swaps" not in st.session_state:
+                            st.session_state.exercise_swaps = {}
+                        st.session_state.exercise_swaps[eid] = options[selected_label]
+                        st.rerun()
+            except Exception as e:
+                st.error(f"Swap unavailable: {e}")
 
         # --- Expander for sets ---
         logged_count = sum(
