@@ -387,7 +387,7 @@ def screen_select_day():
         st.warning("No programs found. Go to Admin to import one first.")
         return
 
-    program_map = {p.name: p.id for p in programs}
+    program_map           = {p.name: p.id for p in programs}
     selected_program_name = st.selectbox("Program", list(program_map.keys()))
     selected_program_id   = program_map[selected_program_name]
 
@@ -396,23 +396,44 @@ def screen_select_day():
         st.warning("This program has no weeks defined yet.")
         return
 
-    selected_week = st.selectbox("Week", weeks, format_func=lambda w: f"Week {w}")
+    # --- Smart default ---
+    suggested_week, suggested_day = get_next_program_day(selected_program_id)
+
+    week_index = (
+        weeks.index(suggested_week)
+        if suggested_week in weeks else 0
+    )
+    selected_week = st.selectbox(
+        "Week", weeks,
+        index=week_index,
+        format_func=lambda w: f"Week {w}"
+    )
 
     days = get_days(selected_program_id, selected_week)
     if not days:
         st.warning("No days found for this week.")
         return
 
-    day_map            = {d.label: d.id for d in days}
-    selected_day_label = st.selectbox("Day", list(day_map.keys()))
+    day_map    = {d.label: d.id for d in days}
+    day_labels = list(day_map.keys())
+    day_nums   = [d.day_num for d in days]
+
+    day_index = (
+        day_nums.index(suggested_day)
+        if suggested_day in day_nums and selected_week == suggested_week else 0
+    )
+    selected_day_label = st.selectbox("Day", day_labels, index=day_index)
     selected_day_id    = day_map[selected_day_label]
+
+    if suggested_week and suggested_day:
+        st.caption(f"💡 Suggested based on your last session")
 
     st.divider()
 
     open_session_id, open_session_date = get_open_session_for_day(selected_day_id)
 
     if open_session_id:
-        st.info(f"⚠️ An open session exists for this day from today. Resume it?")
+        st.info("⚠️ An open session exists for this day from today. Resume it?")
         col1, col2 = st.columns(2)
         if col1.button("Resume Session", type="primary", use_container_width=True):
             rehydrate_session(open_session_id, selected_day_id, open_session_date)
@@ -437,6 +458,71 @@ def screen_select_day():
             st.session_state.first_set_logged   = False
             st.rerun()
 
+# ---------------------------------------------------------------------------
+# Get next program day helper
+# ---------------------------------------------------------------------------
+
+def get_next_program_day(program_id: int):
+    """Return (week_num, day_num) of the next suggested day based on last completed session."""
+    db = SessionLocal()
+
+    # Find last completed session for this program
+    last = (
+        db.query(Session, ProgramDay)
+        .join(ProgramDay, ProgramDay.id == Session.program_day_id)
+        .filter(
+            ProgramDay.program_id  == program_id,
+            Session.duration_mins  != None,
+        )
+        .order_by(Session.date.desc())
+        .first()
+    )
+
+    if not last:
+        db.close()
+        return None, None
+
+    _, last_day = last
+    current_week = last_day.week_num
+    current_day  = last_day.day_num
+
+    # Get all days in current week
+    days_in_week = (
+        db.query(ProgramDay)
+        .filter(
+            ProgramDay.program_id == program_id,
+            ProgramDay.week_num   == current_week,
+        )
+        .order_by(ProgramDay.day_num)
+        .all()
+    )
+    max_day = max(d.day_num for d in days_in_week)
+
+    if current_day < max_day:
+        # Next day in same week
+        next_week = current_week
+        next_day  = current_day + 1
+    else:
+        # End of week — move to next week day 1
+        all_weeks = (
+            db.query(ProgramDay.week_num)
+            .filter(ProgramDay.program_id == program_id)
+            .distinct()
+            .order_by(ProgramDay.week_num)
+            .all()
+        )
+        week_nums = [w.week_num for w in all_weeks]
+        max_week  = max(week_nums)
+
+        if current_week < max_week:
+            next_week = week_nums[week_nums.index(current_week) + 1]
+        else:
+            next_week = week_nums[0]  # wrap to first week
+
+        next_day = 1
+
+    db.close()
+    return next_week, next_day
 
 
 # ---------------------------------------------------------------------------
