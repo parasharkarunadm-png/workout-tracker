@@ -621,7 +621,7 @@ def screen_logger():
 
         with col_swap.popover("🔄"):
             try:
-                candidates = get_swap_candidates(eid, st.session_state.program_day_id)
+                candidates = get_swap_candidates(eid, st.session_state.program_day_id, st.session_state.session_id)
                 if not candidates:
                     st.caption("No alternatives available.")
                 else:

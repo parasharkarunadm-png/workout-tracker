@@ -142,37 +142,40 @@ def get_db():
         yield db
     finally:
         db.close()
-def get_swap_candidates(exercise_id: int, program_day_id: int) -> list:
-    """
-    Return exercises that can swap for the given exercise.
-    Filters by same primary_muscle + movement_pattern.
-    Excludes the original exercise and any already scheduled in this program day.
-    """
+def get_swap_candidates(exercise_id: int, program_day_id: int, session_id: int = None) -> list:
     db = SessionLocal()
 
-    # Get the original exercise
     original = db.query(Exercise).filter(Exercise.id == exercise_id).first()
     if not original:
         db.close()
         return []
 
-    # Get all exercise_ids already scheduled in this program day
+    # Exercises scheduled in this program day
     scheduled_ids = (
         db.query(ProgramSet.exercise_id)
         .filter(ProgramSet.day_id == program_day_id)
         .distinct()
         .all()
     )
-    scheduled_ids = {row[0] for row in scheduled_ids}
+    excluded_ids = {row[0] for row in scheduled_ids}
 
-    # Query candidates — same muscle + pattern, exclude scheduled
+    # Also exclude exercises already logged in current session
+    if session_id:
+        logged_ids = (
+            db.query(LoggedSet.exercise_id)
+            .filter(LoggedSet.session_id == session_id)
+            .distinct()
+            .all()
+        )
+        excluded_ids.update(row[0] for row in logged_ids)
+
     candidates = (
         db.query(Exercise)
         .filter(
             Exercise.primary_muscle   == original.primary_muscle,
             Exercise.movement_pattern == original.movement_pattern,
             Exercise.id               != exercise_id,
-            Exercise.id.notin_(scheduled_ids),
+            Exercise.id.notin_(excluded_ids),
         )
         .order_by(Exercise.name)
         .all()
