@@ -44,6 +44,7 @@ defaults = {
     "last_set_time_by_exercise": {},
     "exercise_swaps": {},
     "expanded_exercises": set(),
+    "finish_requested": False
 }
 for key, val in defaults.items():
     if key not in st.session_state:

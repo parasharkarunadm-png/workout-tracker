@@ -528,6 +528,51 @@ def get_next_program_day(program_id: int):
 # ---------------------------------------------------------------------------
 # Screen 2 — Logger
 # ---------------------------------------------------------------------------
+def do_finish_session(session_secs: int, day_label: str):
+    db = SessionLocal()
+    s = db.query(Session).filter(Session.id == st.session_state.session_id).first()
+    if s:
+        s.duration_mins = session_secs // 60
+        db.commit()
+    db.close()
+
+    sets       = list(st.session_state.logged_sets.values())
+    total_sets = len(sets)
+    total_prs  = sum(1 for s in sets if s.get("is_pr"))
+    rest_times = [s["rest_secs"] for s in sets if s.get("rest_secs")]
+    total_rest = sum(rest_times)
+    avg_rest   = int(total_rest / len(rest_times)) if rest_times else 0
+
+    st.session_state.summary_data = {
+        "duration_secs": session_secs,
+        "total_sets"   : total_sets,
+        "total_prs"    : total_prs,
+        "total_rest"   : total_rest,
+        "avg_rest"     : avg_rest,
+        "day_label"    : day_label,
+    }
+
+    for key, val in {
+        "session_started"          : False,
+        "session_id"               : None,
+        "program_day_id"           : None,
+        "last_set_time"            : None,
+        "last_set_time_by_exercise": {},
+        "session_start_time"       : None,
+        "first_set_logged"         : False,
+        "logged_sets"              : {},
+        "adhoc_sets"               : {},
+        "adhoc_counter"            : -1,
+        "last_logged_key"          : None,
+        "exercise_swaps"           : {},
+        "expanded_exercises"       : set(),
+        "finish_requested"         : False,
+    }.items():
+        st.session_state[key] = val
+
+    st.session_state.show_summary = True
+    st.rerun()
+
 def screen_logger():
     now = datetime.utcnow()
 
@@ -688,48 +733,42 @@ def screen_logger():
             st.rerun()
 
     if st.button("Finish Session", type="primary", use_container_width=True):
-        db = SessionLocal()
-        s = db.query(Session).filter(Session.id == st.session_state.session_id).first()
-        if s:
-            s.duration_mins = session_secs // 60
-            db.commit()
-        db.close()
-
-        sets       = list(st.session_state.logged_sets.values())
-        total_sets = len(sets)
-        total_prs  = sum(1 for s in sets if s.get("is_pr"))
-        rest_times = [s["rest_secs"] for s in sets if s.get("rest_secs")]
-        total_rest = sum(rest_times)
-        avg_rest   = int(total_rest / len(rest_times)) if rest_times else 0
-
-        st.session_state.summary_data = {
-            "duration_secs": session_secs,
-            "total_sets"   : total_sets,
-            "total_prs"    : total_prs,
-            "total_rest"   : total_rest,
-            "avg_rest"     : avg_rest,
-            "day_label"    : day_label,
-        }
-
-        for key, val in {
-            "session_started"          : False,
-            "session_id"               : None,
-            "program_day_id"           : None,
-            "last_set_time"            : None,
-            "last_set_time_by_exercise": {},
-            "session_start_time"       : None,
-            "first_set_logged"         : False,
-            "logged_sets"              : {},
-            "adhoc_sets"               : {},
-            "adhoc_counter"            : -1,
-            "last_logged_key"          : None,
-            "exercise_swaps"           : {},
-            "expanded_exercises": set(),
-        }.items():
-            st.session_state[key] = val
-
-        st.session_state.show_summary = True
+        st.session_state.finish_requested = True
         st.rerun()
+
+    if st.session_state.get("finish_requested", False):
+        # Check for skipped exercises
+        exercises     = get_planned_exercises(st.session_state.program_day_id)
+        logged_ex_ids = {
+            v["db_id"] and k
+            for k, v in st.session_state.logged_sets.items()
+        }
+        skipped = [
+            ex["exercise_name"]
+            for ex in exercises
+            if not any(
+                s["program_set_id"] in st.session_state.logged_sets
+                for s in ex["sets"]
+            ) and not any(
+                akey in st.session_state.logged_sets
+                for akey in st.session_state.adhoc_sets.get(ex["exercise_id"], [])
+            )
+        ]
+
+        if skipped:
+            st.warning(f"⚠️ You skipped {len(skipped)} exercise(s):")
+            for name in skipped:
+                st.markdown(f"- {name}")
+            col1, col2 = st.columns(2)
+            if col1.button("Finish Anyway", type="primary", use_container_width=True):
+                st.session_state.finish_requested = False
+                do_finish_session(session_secs, day_label)
+            if col2.button("Go Back", use_container_width=True):
+                st.session_state.finish_requested = False
+                st.rerun()
+        else:
+            st.session_state.finish_requested = False
+            do_finish_session(session_secs, day_label)
 
 
 # ---------------------------------------------------------------------------
