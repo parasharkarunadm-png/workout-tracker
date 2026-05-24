@@ -2,3 +2,4 @@ venv/
 *.db
 excel_converter.py
 set-db.sh
+workout_backup.sql
