@@ -1,0 +1,372 @@
+from nicegui import ui
+from nicegui_app.state import WorkoutSession
+from db import SessionLocal, Program, ProgramDay, Session, LoggedSet
+
+def get_programs():
+    db = SessionLocal()
+    programs = db.query(Program).all()
+    result = [{"id": p.id, "name": p.name} for p in programs]
+    db.close()
+    return result
+
+
+def get_weeks(program_id: int):
+    db = SessionLocal()
+    weeks = (
+        db.query(ProgramDay.week_num)
+        .filter(ProgramDay.program_id == program_id)
+        .distinct()
+        .order_by(ProgramDay.week_num)
+        .all()
+    )
+    db.close()
+    return [w.week_num for w in weeks]
+
+
+def get_days(program_id: int, week_num: int):
+    db = SessionLocal()
+    days = (
+        db.query(ProgramDay)
+        .filter(ProgramDay.program_id == program_id,
+                ProgramDay.week_num == week_num)
+        .order_by(ProgramDay.day_num)
+        .all()
+    )
+    result = [{"id": d.id, "label": d.label, "day_num": d.day_num} for d in days]
+    db.close()
+    return result
+
+
+def get_next_program_day(program_id: int):
+    db = SessionLocal()
+    last = (
+        db.query(Session, ProgramDay)
+        .join(ProgramDay, ProgramDay.id == Session.program_day_id)
+        .filter(ProgramDay.program_id == program_id,
+                Session.duration_mins != None)
+        .order_by(Session.date.desc())
+        .first()
+    )
+    if not last:
+        db.close()
+        return None, None
+
+    _, last_day = last
+    current_week = last_day.week_num
+    current_day  = last_day.day_num
+
+    days_in_week = (
+        db.query(ProgramDay)
+        .filter(ProgramDay.program_id == program_id,
+                ProgramDay.week_num == current_week)
+        .order_by(ProgramDay.day_num)
+        .all()
+    )
+    max_day = max(d.day_num for d in days_in_week)
+
+    if current_day < max_day:
+        next_week, next_day = current_week, current_day + 1
+    else:
+        all_weeks = [w.week_num for w in (
+            db.query(ProgramDay.week_num)
+            .filter(ProgramDay.program_id == program_id)
+            .distinct().order_by(ProgramDay.week_num).all()
+        )]
+        next_week = all_weeks[all_weeks.index(current_week) + 1] if current_week < max(all_weeks) else all_weeks[0]
+        next_day = 1
+
+    db.close()
+    return next_week, next_day
+
+
+def get_open_session_for_day(program_day_id: int):
+    from datetime import datetime
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    db = SessionLocal()
+    session = (
+        db.query(Session)
+        .filter(Session.program_day_id == program_day_id,
+                Session.date >= today_start,
+                Session.duration_mins == None)
+        .order_by(Session.date.desc())
+        .first()
+    )
+    if session is None:
+        db.close()
+        return None, None
+    has_sets = db.query(LoggedSet).filter(LoggedSet.session_id == session.id).count() > 0
+    db.close()
+    return (session.id, session.date) if has_sets else (None, None)
+
+def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
+    from nicegui_app.services import (
+        get_planned_exercises, get_last_best_set,
+        log_set, create_session, rehydrate_session, finish_session
+    )
+    from datetime import datetime
+
+    # --- Init session state ---
+    if open_sid:
+        logged, adhoc, counter, last_key, last_at = rehydrate_session(open_sid)
+        session.session_id                = open_sid
+        session.logged_sets               = logged
+        session.adhoc_sets                = adhoc
+        session.adhoc_counter             = counter
+        session.last_logged_key           = last_key
+        session.last_set_time             = last_at
+        session.first_set_logged          = len(logged) > 0
+        session.session_start_time        = datetime.utcnow()
+    else:
+        sid = create_session(day_id)
+        session.session_id         = sid
+        session.session_start_time = datetime.utcnow()
+
+    session.program_day_id  = day_id
+    session.session_started = True
+
+    exercises = get_planned_exercises(day_id)
+
+    # --- Header ---
+    with ui.column().classes('w-full max-w-lg mx-auto p-4 gap-4'):
+        db = SessionLocal()
+        day = db.query(ProgramDay).filter(ProgramDay.id == day_id).first()
+        day_label = day.label if day else "Workout"
+        db.close()
+
+        ui.label(day_label).classes('text-xl font-bold')
+
+        with ui.row().classes('w-full justify-between'):
+            session_label = ui.label('Session: 00:00:00').classes('text-sm')
+            rest_label    = ui.label('Rest: --:--:--').classes('text-sm')
+
+        ui.separator()
+
+        # --- Timer ---
+        def update_timers():
+            if session.session_start_time:
+                secs = int((datetime.utcnow() - session.session_start_time).total_seconds())
+                h, m, s = secs // 3600, (secs % 3600) // 60, secs % 60
+                session_label.set_text(f'Session: {h:02}:{m:02}:{s:02}')
+            if session.last_set_time and session.first_set_logged:
+                rsecs = int((datetime.utcnow() - session.last_set_time).total_seconds())
+                h, m, s = rsecs // 3600, (rsecs % 3600) // 60, rsecs % 60
+                rest_label.set_text(f'Rest: {h:02}:{m:02}:{s:02}')
+
+        ui.timer(1.0, update_timers)
+
+        # --- Exercises ---
+        for ex in exercises:
+            eid        = ex["exercise_id"]
+            ex_name    = ex["exercise_name"]
+            sets       = ex["sets"]
+            last_best  = get_last_best_set(eid, session.session_id)
+
+            with ui.expansion(f'{ex_name} ({len(sets)} sets)').classes('w-full'):
+                ui.label(last_best).classes('text-sm text-gray-400')
+
+                set_rows = ui.column().classes('w-full gap-2')
+
+                def render_sets(eid=eid, sets=sets, set_rows=set_rows):
+                    set_rows.clear()
+                    with set_rows:
+                        for idx, s in enumerate(sets):
+                            psid     = str(s["program_set_id"])
+                            set_type = s["set_type"]
+                            set_num  = s["set_num"]
+                            t_reps   = s["target_reps"]
+                            t_rir    = s["target_rir"]
+                            t_pct    = s["target_pct_1rm"]
+                            pct_str  = f" @ {int(t_pct*100)}% 1RM" if t_pct else ""
+                            rep_str  = "AMRAP" if not t_reps or set_type == "amrap" else str(t_reps)
+
+                            if psid in session.logged_sets:
+                                logged   = session.logged_sets[psid]
+                                pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
+                                rest_str = f" | Rest: {logged['rest_secs']}s" if logged.get("rest_secs") else ""
+                                ui.label(
+                                    f"✅ Set {set_num} — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}"
+                                ).classes('text-green-400 text-sm')
+                                continue
+
+                            with ui.row().classes('w-full items-center gap-2'):
+                                ui.label(f'Set {set_num} — Target: {rep_str} reps{pct_str}').classes('text-sm font-bold w-full')
+
+                            with ui.row().classes('w-full gap-2'):
+                                w_input = ui.number(placeholder='lb',   min=0, step=0.5).classes('flex-1')
+                                r_input = ui.number(placeholder='Reps', min=0, value=t_reps).classes('flex-1')
+                                i_input = ui.number(placeholder='RIR',  min=0, value=t_rir).classes('flex-1')
+
+                                def handle_log(
+                                    psid=psid, eid=eid, set_num=set_num,
+                                    set_type=set_type,
+                                    w=w_input, r=r_input, i=i_input
+                                ):
+                                    if not w.value:
+                                        ui.notify('Enter weight first', color='negative')
+                                        return
+                                    now = datetime.utcnow()
+                                    last_ex = session.last_set_time_by_exercise.get(eid)
+                                    rest_secs = int((now - last_ex).total_seconds()) if last_ex else 0
+
+                                    is_pr, db_id = log_set(
+                                        session_id=session.session_id,
+                                        exercise_id=eid,
+                                        program_set_id=int(psid),
+                                        set_num=set_num,
+                                        weight_lb=float(w.value),
+                                        reps=int(r.value or 0),
+                                        rir=int(i.value or 0),
+                                        rest_secs=rest_secs,
+                                        set_type=set_type,
+                                    )
+                                    session.logged_sets[psid] = {
+                                        "weight_lb": float(w.value),
+                                        "reps":      int(r.value or 0),
+                                        "rir":       int(i.value or 0),
+                                        "rest_secs": rest_secs,
+                                        "is_pr":     is_pr,
+                                        "db_id":     db_id,
+                                        "set_type":  set_type,
+                                    }
+                                    session.last_logged_key = psid
+                                    session.last_set_time   = now
+                                    session.last_set_time_by_exercise[eid] = now
+                                    session.first_set_logged = True
+                                    render_sets(eid=eid, sets=sets, set_rows=set_rows)
+
+                                ui.button('Log', on_click=handle_log).props('color=red').classes('flex-1')
+
+                render_sets()
+
+        ui.separator()
+
+        # --- Finish session ---
+        def handle_finish():
+            skipped = [
+                ex["exercise_name"] for ex in exercises
+                if not any(str(s["program_set_id"]) in session.logged_sets for s in ex["sets"])
+                and not any(k in session.logged_sets for k in session.adhoc_sets.get(ex["exercise_id"], []))
+            ]
+            if skipped:
+                with ui.dialog() as dialog, ui.card():
+                    ui.label('⚠️ Skipped exercises:').classes('font-bold')
+                    for name in skipped:
+                        ui.label(f'• {name}')
+                    with ui.row():
+                        ui.button('Finish Anyway', on_click=lambda: (dialog.close(), do_finish())).props('color=blue')
+                        ui.button('Go Back', on_click=dialog.close)
+                dialog.open()
+            else:
+                do_finish()
+
+        def do_finish():
+            secs = int((datetime.utcnow() - session.session_start_time).total_seconds())
+            finish_session(session.session_id, secs)
+            ui.navigate.to('/')
+
+        ui.button('Finish Session', on_click=handle_finish).classes('w-full').props('color=blue')
+def render(session: WorkoutSession):
+    programs = get_programs()
+    if not programs:
+        ui.label('No programs found. Go to Admin to import one.')
+        return
+
+    program_map = {p["name"]: p["id"] for p in programs}
+
+    with ui.column().classes('w-full max-w-lg mx-auto p-4 gap-4'):
+        ui.label('Select Today\'s Workout').classes('text-xl font-bold')
+
+        # --- Program selector ---
+        program_select = ui.select(
+            list(program_map.keys()),
+            label='Program',
+        ).classes('w-full')
+
+        # --- Week selector ---
+        week_select = ui.select(
+            [],
+            label='Week',
+        ).classes('w-full')
+
+        # --- Day selector ---
+        day_select = ui.select(
+            [],
+            label='Day',
+        ).classes('w-full')
+
+        suggestion_label = ui.label('').classes('text-sm text-gray-400')
+        ui.separator()
+
+        # --- Resume/Start buttons ---
+        action_area = ui.column().classes('w-full gap-2')
+
+        def refresh_days():
+            program_id = program_map[program_select.value]
+            week_num   = int(week_select.value.replace('Week ', ''))
+            days       = get_days(program_id, week_num)
+            day_map    = {d["label"]: d["id"] for d in days}
+
+            day_select.options = list(day_map.keys())
+            day_select.value   = day_select.options[0] if day_select.options else None
+            day_select.update()
+            refresh_actions()
+
+        def refresh_weeks():
+            program_id = program_map[program_select.value]
+            weeks      = get_weeks(program_id)
+            sugg_week, sugg_day = get_next_program_day(program_id)
+
+            week_select.options = [f'Week {w}' for w in weeks]
+            week_select.value   = (
+                f'Week {sugg_week}'
+                if sugg_week and f'Week {sugg_week}' in week_select.options
+                else week_select.options[0] if week_select.options else None
+            )
+            week_select.update()
+
+            if sugg_week:
+                suggestion_label.set_text('💡 Suggested based on your last session')
+            else:
+                suggestion_label.set_text('')
+
+            refresh_days()
+
+        def refresh_actions():
+            action_area.clear()
+            program_id     = program_map[program_select.value]
+            week_num       = int(week_select.value.replace('Week ', ''))
+            day_label      = day_select.value
+            days           = get_days(program_id, week_num)
+            day_map        = {d["label"]: d["id"] for d in days}
+            day_id         = day_map.get(day_label)
+
+            if not day_id:
+                return
+
+            open_sid, open_date = get_open_session_for_day(day_id)
+
+            with action_area:
+                if open_sid:
+                    ui.label('⚠️ An open session exists for today. Resume it?').classes('text-yellow-400')
+                    with ui.row().classes('w-full gap-2'):
+                        ui.button('Resume Session',
+                            on_click=lambda: start_logger(session, day_id, open_sid, open_date)
+                        ).classes('flex-1').props('color=blue')
+                        ui.button('Start Fresh',
+                            on_click=lambda: start_logger(session, day_id, None, None)
+                        ).classes('flex-1').props('outline')
+                else:
+                    ui.button('Start Session',
+                        on_click=lambda: start_logger(session, day_id, None, None)
+                    ).classes('w-full').props('color=blue')
+
+        def start_logger(sess, day_id, open_sid, open_date):
+            ui.navigate.to(f'/logger/{day_id}/{open_sid or 0}')
+
+        program_select.on('update:model-value', lambda e: refresh_weeks())
+        week_select.on('update:model-value', lambda e: refresh_days())
+        day_select.on('update:model-value', lambda e: refresh_actions())
+
+        # Initial load
+        program_select.value = list(program_map.keys())[0]
+        refresh_weeks()
