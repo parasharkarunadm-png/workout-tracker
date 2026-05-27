@@ -45,7 +45,22 @@ def get_day_label(program_day_id: int) -> str:
 
 
 def get_planned_exercises(program_day_id: int) -> list:
-    from log_workout import get_set_type_priority, normalize_set_type
+    SET_TYPE_PRIORITY = {"warmup": 0, "working": 1, "amrap": 2, "dropset": 3}
+
+    def normalize_set_type(notes):
+        if not notes:
+            return "working"
+        n = notes.strip().lower().replace(" ", "")
+        if n in ("warmup", "warm-up"):
+            return "warmup"
+        if n == "amrap":
+            return "amrap"
+        if n in ("dropset", "drop", "ds", "tripleds"):
+            return "dropset"
+        return "working"
+
+    def get_priority(notes):
+        return SET_TYPE_PRIORITY.get(normalize_set_type(notes), 1)
     db = SessionLocal()
     day = db.query(ProgramDay).filter(ProgramDay.id == program_day_id).first()
     if not day:
@@ -53,7 +68,7 @@ def get_planned_exercises(program_day_id: int) -> list:
         return []
 
     exercises = {}
-    for ps in sorted(day.sets, key=lambda x: (get_set_type_priority(x.notes), x.set_num)):
+    for ps in sorted(day.sets, key=lambda x: (get_priority(x.notes), x.set_num)):
         ex = ps.exercise
         if ex.id not in exercises:
             exercises[ex.id] = {
