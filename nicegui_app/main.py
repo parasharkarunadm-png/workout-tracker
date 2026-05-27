@@ -8,6 +8,11 @@ from nicegui_app.state import WorkoutSession
 
 init_db()
 
+from fastapi import Response
+
+@app.get('/health')
+def health():
+    return Response('ok')
 
 @ui.page('/')
 def index():
