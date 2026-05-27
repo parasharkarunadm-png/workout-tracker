@@ -7,3 +7,4 @@ __pycache__/
 excel_converter.py
 set-db.sh
 workout_backup.sql
+x_requirements.txt
