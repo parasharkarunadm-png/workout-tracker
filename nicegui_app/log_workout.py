@@ -127,19 +127,18 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
     exercises = get_planned_exercises(day_id)
 
     # --- Header ---
-    with ui.column().classes('w-full max-w-lg mx-auto p-4 gap-4'):
-        db = SessionLocal()
-        day = db.query(ProgramDay).filter(ProgramDay.id == day_id).first()
-        day_label = day.label if day else "Workout"
-        db.close()
+    db = SessionLocal()
+    day = db.query(ProgramDay).filter(ProgramDay.id == day_id).first()
+    day_label = day.label if day else "Workout"
+    db.close()
 
-        ui.label(day_label).classes('text-xl font-bold')
-
-        with ui.row().classes('w-full justify-between'):
+    with ui.header().classes('w-full flex justify-between items-center px-4 py-2'):
+        ui.label(day_label).classes('text-lg font-bold')
+        with ui.row().classes('gap-6'):
             session_label = ui.label('Session: 00:00:00').classes('text-sm')
             rest_label    = ui.label('Rest: --:--:--').classes('text-sm')
 
-        ui.separator()
+    with ui.column().classes('w-full max-w-lg mx-auto p-4 gap-4'):
 
         # --- Timer ---
         def update_timers():
@@ -156,17 +155,88 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
 
         # --- Exercises ---
         for ex in exercises:
-            eid        = ex["exercise_id"]
-            ex_name    = ex["exercise_name"]
-            sets       = ex["sets"]
-            last_best  = get_last_best_set(eid, session.session_id)
+            eid       = ex["exercise_id"]
+            ex_name   = ex["exercise_name"]
+            sets      = ex["sets"]
 
-            with ui.expansion(f'{ex_name} ({len(sets)} sets)').classes('w-full'):
-                ui.label(last_best).classes('text-sm text-gray-400')
+            effective_eid = session.exercise_swaps.get(eid, eid)
+            last_best     = get_last_best_set(effective_eid, session.session_id)
+
+            # --- Exercise card ---
+            with ui.card().classes('w-full'):
+                # Header row: name + swap button
+                expansion_body = ui.column().classes('w-full gap-2')
+                expansion_body.visible = False
+
+                last_best_label = ui.label(last_best).classes('text-sm text-gray-400')
+                last_best_label.visible = False
+
+                ex_header_label = ui.label(f'{ex_name} ({len(sets)} sets)').classes('font-bold')
+
+                with ui.row().classes('w-full items-center justify-between'):
+                    toggle_btn = ui.button(
+                        f'▶ {ex_name} ({len(sets)} sets)',
+                        on_click=lambda body=expansion_body, lbl=last_best_label: (
+                            setattr(body, 'visible', not body.visible),
+                            setattr(lbl, 'visible', not lbl.visible),
+                        )
+                    ).props('flat').classes('text-left flex-1')
+
+                    def open_swap_dialog(
+                        eid=eid, toggle_btn=toggle_btn,
+                        last_best_label=last_best_label, sets=sets
+                    ):
+                        from db import get_swap_candidates
+                        candidates = get_swap_candidates(eid, day_id, session.session_id)
+
+                        with ui.dialog() as dialog, ui.card().classes('w-full'):
+                            ui.label('Swap Exercise').classes('font-bold text-lg')
+                            if not candidates:
+                                ui.label('No alternatives available.').classes('text-gray-400')
+                                ui.button('Close', on_click=dialog.close)
+                            else:
+                                selected = {'id': None, 'name': None}
+                                with ui.column().classes('w-full gap-2'):
+                                    for c in candidates:
+                                        label = f"{c['name']} ({c['equipment']})"
+                                        def pick(c=c, selected=selected, label=label):
+                                            selected['id']   = c['exercise_id']
+                                            selected['name'] = c['name']
+                                            ui.notify(f"Selected: {c['name']}", color='positive')
+                                        ui.button(label, on_click=pick).props('flat').classes('w-full text-left')
+
+                                def confirm_swap(
+                                    selected=selected, eid=eid,
+                                    toggle_btn=toggle_btn,
+                                    last_best_label=last_best_label
+                                ):
+                                    if not selected['id']:
+                                        ui.notify('Pick an exercise first', color='negative')
+                                        return
+                                    session.exercise_swaps[eid] = selected['id']
+                                    new_best = get_last_best_set(selected['id'], session.session_id)
+                                    toggle_btn.set_text(f"▶ {selected['name']} ({len(sets)} sets)")
+                                    last_best_label.set_text(new_best)
+                                    dialog.close()
+                                    ui.notify(f"Swapped to {selected['name']}", color='positive')
+
+                                with ui.row().classes('w-full gap-2 mt-2'):
+                                    ui.button('Confirm Swap', on_click=confirm_swap).props('color=blue')
+                                    ui.button('Cancel', on_click=dialog.close)
+
+                        dialog.open()
+
+                    ui.button('🔄', on_click=open_swap_dialog).props('flat round')
+
+                last_best_label
+                expansion_body
 
                 set_rows = ui.column().classes('w-full gap-2')
 
-                def render_sets(eid=eid, sets=sets, set_rows=set_rows):
+                def render_sets(
+                    eid=eid, sets=sets, set_rows=set_rows,
+                    expansion_body=expansion_body
+                ):
                     set_rows.clear()
                     with set_rows:
                         for idx, s in enumerate(sets):
@@ -201,42 +271,43 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                                     set_type=set_type,
                                     w=w_input, r=r_input, i=i_input
                                 ):
+                                    effective = session.exercise_swaps.get(eid, eid)
                                     if not w.value:
                                         ui.notify('Enter weight first', color='negative')
                                         return
                                     now = datetime.utcnow()
-                                    last_ex = session.last_set_time_by_exercise.get(eid)
+                                    last_ex   = session.last_set_time_by_exercise.get(effective)
                                     rest_secs = int((now - last_ex).total_seconds()) if last_ex else 0
 
                                     is_pr, db_id = log_set(
-                                        session_id=session.session_id,
-                                        exercise_id=eid,
-                                        program_set_id=int(psid),
-                                        set_num=set_num,
-                                        weight_lb=float(w.value),
-                                        reps=int(r.value or 0),
-                                        rir=int(i.value or 0),
-                                        rest_secs=rest_secs,
-                                        set_type=set_type,
+                                        session_id     = session.session_id,
+                                        exercise_id    = effective,
+                                        program_set_id = int(psid),
+                                        set_num        = set_num,
+                                        weight_lb      = float(w.value),
+                                        reps           = int(r.value or 0),
+                                        rir            = int(i.value or 0),
+                                        rest_secs      = rest_secs,
+                                        set_type       = set_type,
                                     )
                                     session.logged_sets[psid] = {
                                         "weight_lb": float(w.value),
-                                        "reps":      int(r.value or 0),
-                                        "rir":       int(i.value or 0),
+                                        "reps"     : int(r.value or 0),
+                                        "rir"      : int(i.value or 0),
                                         "rest_secs": rest_secs,
-                                        "is_pr":     is_pr,
-                                        "db_id":     db_id,
-                                        "set_type":  set_type,
+                                        "is_pr"    : is_pr,
+                                        "db_id"    : db_id,
+                                        "set_type" : set_type,
                                     }
-                                    session.last_logged_key = psid
-                                    session.last_set_time   = now
-                                    session.last_set_time_by_exercise[eid] = now
+                                    session.last_logged_key  = psid
+                                    session.last_set_time    = now
+                                    session.last_set_time_by_exercise[effective] = now
                                     session.first_set_logged = True
                                     render_sets(eid=eid, sets=sets, set_rows=set_rows)
 
                                 ui.button('Log', on_click=handle_log).props('color=red').classes('flex-1')
-
-                render_sets()
+                with expansion_body:
+                    render_sets()
 
         ui.separator()
 

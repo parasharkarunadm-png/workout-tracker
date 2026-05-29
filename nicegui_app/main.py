@@ -10,12 +10,16 @@ init_db()
 
 from fastapi import Response
 
+def setup_theme():
+    ui.dark_mode().enable()
+    ui.colors(primary='deep-purple')
 @app.get('/health')
 def health():
     return Response('ok')
 
 @ui.page('/')
 def index():
+    setup_theme()
     session = WorkoutSession()
     from nicegui_app.log_workout import render
     render(session)
@@ -23,9 +27,11 @@ def index():
 
 @ui.page('/logger/{day_id}/{open_sid}')
 def logger(day_id: int, open_sid: int):
+    setup_theme()
     from nicegui_app.log_workout import screen_logger
     session = WorkoutSession()
     screen_logger(session, day_id, open_sid if open_sid != 0 else None)
+
 
 ui.run(
     title='Workout Tracker',
