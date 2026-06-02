@@ -136,8 +136,8 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
     with ui.header().classes('w-full flex justify-between items-center px-4 py-2'):
         ui.label(day_label).classes('text-lg font-bold')
         with ui.row().classes('gap-6'):
-            session_label = ui.label('Session: 00:00:00').classes('text-sm')
-            rest_label    = ui.label('Rest: --:--:--').classes('text-sm')
+            session_label = ui.label('Session: 00:00:00').classes('text-base font-bold')
+            rest_label    = ui.label('Rest: --:--:--').classes('text-base font-bold')
 
     with ui.column().classes('w-full max-w-lg mx-auto p-4 gap-4'):
 

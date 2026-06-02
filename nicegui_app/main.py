@@ -16,6 +16,12 @@ from fastapi import Response
 def setup_theme():
     ui.dark_mode().enable()
     ui.colors(primary='deep-purple')
+    ui.add_css('''
+        .nicegui-header {
+            background-color: #1a1a2e !important;
+            padding: 12px 16px !important;
+        }
+    ''')
 @app.get('/health')
 def health():
     return Response('ok')
