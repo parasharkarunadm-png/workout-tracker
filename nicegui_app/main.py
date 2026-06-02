@@ -1,5 +1,8 @@
 import sys
 import os
+import warnings
+import urllib3
+warnings.filterwarnings('ignore', category=urllib3.exceptions.NotOpenSSLWarning)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from nicegui import ui, app

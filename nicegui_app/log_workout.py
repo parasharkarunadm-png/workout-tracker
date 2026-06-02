@@ -108,14 +108,14 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
     # --- Init session state ---
     if open_sid:
         logged, adhoc, counter, last_key, last_at = rehydrate_session(open_sid)
-        session.session_id                = open_sid
-        session.logged_sets               = logged
-        session.adhoc_sets                = adhoc
-        session.adhoc_counter             = counter
-        session.last_logged_key           = last_key
-        session.last_set_time             = last_at
-        session.first_set_logged          = len(logged) > 0
-        session.session_start_time        = datetime.utcnow()
+        session.session_id         = open_sid
+        session.logged_sets        = logged
+        session.adhoc_sets         = adhoc
+        session.adhoc_counter      = counter
+        session.last_logged_key    = last_key
+        session.last_set_time      = last_at
+        session.first_set_logged   = len(logged) > 0
+        session.session_start_time = datetime.utcnow()
     else:
         sid = create_session(day_id)
         session.session_id         = sid
@@ -126,12 +126,13 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
 
     exercises = get_planned_exercises(day_id)
 
-    # --- Header ---
+    # --- DB: day label ---
     db = SessionLocal()
     day = db.query(ProgramDay).filter(ProgramDay.id == day_id).first()
     day_label = day.label if day else "Workout"
     db.close()
 
+    # --- Sticky header ---
     with ui.header().classes('w-full flex justify-between items-center px-4 py-2'):
         ui.label(day_label).classes('text-lg font-bold')
         with ui.row().classes('gap-6'):
@@ -155,163 +156,176 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
 
         # --- Exercises ---
         for ex in exercises:
-            eid       = ex["exercise_id"]
-            ex_name   = ex["exercise_name"]
-            sets      = ex["sets"]
+            eid      = ex["exercise_id"]
+            ex_name  = ex["exercise_name"]
+            sets     = ex["sets"]
 
             effective_eid = session.exercise_swaps.get(eid, eid)
             last_best     = get_last_best_set(effective_eid, session.session_id)
 
-            # --- Exercise card ---
             with ui.card().classes('w-full'):
-                # Header row: name + swap button
-                expansion_body = ui.column().classes('w-full gap-2')
-                expansion_body.visible = False
 
-                last_best_label = ui.label(last_best).classes('text-sm text-gray-400')
-                last_best_label.visible = False
-
-                ex_header_label = ui.label(f'{ex_name} ({len(sets)} sets)').classes('font-bold')
-
+                # --- Header row ---
                 with ui.row().classes('w-full items-center justify-between'):
                     toggle_btn = ui.button(
                         f'▶ {ex_name} ({len(sets)} sets)',
-                        on_click=lambda body=expansion_body, lbl=last_best_label: (
-                            setattr(body, 'visible', not body.visible),
-                            setattr(lbl, 'visible', not lbl.visible),
-                        )
                     ).props('flat').classes('text-left flex-1')
+                    swap_btn = ui.button('🔄').props('flat round')
 
-                    def open_swap_dialog(
-                        eid=eid, toggle_btn=toggle_btn,
-                        last_best_label=last_best_label, sets=sets
-                    ):
-                        from db import get_swap_candidates
-                        candidates = get_swap_candidates(eid, day_id, session.session_id)
+                # --- Last best (hidden until expanded) ---
+                last_best_label = ui.label(last_best).classes('text-sm text-gray-400')
+                last_best_label.visible = False
 
-                        with ui.dialog() as dialog, ui.card().classes('w-full'):
-                            ui.label('Swap Exercise').classes('font-bold text-lg')
-                            if not candidates:
-                                ui.label('No alternatives available.').classes('text-gray-400')
-                                ui.button('Close', on_click=dialog.close)
-                            else:
-                                selected = {'id': None, 'name': None}
-                                with ui.column().classes('w-full gap-2'):
-                                    for c in candidates:
-                                        label = f"{c['name']} ({c['equipment']})"
-                                        def pick(c=c, selected=selected, label=label):
-                                            selected['id']   = c['exercise_id']
-                                            selected['name'] = c['name']
-                                            ui.notify(f"Selected: {c['name']}", color='positive')
-                                        ui.button(label, on_click=pick).props('flat').classes('w-full text-left')
+                # --- Expansion body (hidden until expanded) ---
+                expansion_body = ui.column().classes('w-full gap-2')
+                expansion_body.visible = False
 
-                                def confirm_swap(
-                                    selected=selected, eid=eid,
-                                    toggle_btn=toggle_btn,
-                                    last_best_label=last_best_label
-                                ):
-                                    if not selected['id']:
-                                        ui.notify('Pick an exercise first', color='negative')
-                                        return
-                                    session.exercise_swaps[eid] = selected['id']
-                                    new_best = get_last_best_set(selected['id'], session.session_id)
-                                    toggle_btn.set_text(f"▶ {selected['name']} ({len(sets)} sets)")
-                                    last_best_label.set_text(new_best)
-                                    dialog.close()
-                                    ui.notify(f"Swapped to {selected['name']}", color='positive')
-
-                                with ui.row().classes('w-full gap-2 mt-2'):
-                                    ui.button('Confirm Swap', on_click=confirm_swap).props('color=blue')
-                                    ui.button('Cancel', on_click=dialog.close)
-
-                        dialog.open()
-
-                    ui.button('🔄', on_click=open_swap_dialog).props('flat round')
-
-                last_best_label
-                expansion_body
-
-                set_rows = ui.column().classes('w-full gap-2')
-
-                def render_sets(
-                    eid=eid, sets=sets, set_rows=set_rows,
-                    expansion_body=expansion_body
+                # --- Wire toggle ---
+                def make_toggle(
+                    body=expansion_body, lbl=last_best_label,
+                    btn=toggle_btn, name=ex_name, count=len(sets)
                 ):
-                    set_rows.clear()
-                    with set_rows:
-                        for idx, s in enumerate(sets):
-                            psid     = str(s["program_set_id"])
-                            set_type = s["set_type"]
-                            set_num  = s["set_num"]
-                            t_reps   = s["target_reps"]
-                            t_rir    = s["target_rir"]
-                            t_pct    = s["target_pct_1rm"]
-                            pct_str  = f" @ {int(t_pct*100)}% 1RM" if t_pct else ""
-                            rep_str  = "AMRAP" if not t_reps or set_type == "amrap" else str(t_reps)
+                    def toggle():
+                        body.visible = not body.visible
+                        lbl.visible  = not lbl.visible
+                        btn.set_text(
+                            f"{'▼' if body.visible else '▶'} {name} ({count} sets)"
+                        )
+                    return toggle
 
-                            if psid in session.logged_sets:
-                                logged   = session.logged_sets[psid]
-                                pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
-                                rest_str = f" | Rest: {logged['rest_secs']}s" if logged.get("rest_secs") else ""
-                                ui.label(
-                                    f"✅ Set {set_num} — {logged['weight_lb']}lb × {logged['reps']} reps @ RIR {logged['rir']}{rest_str}{pr_badge}"
-                                ).classes('text-green-400 text-sm')
-                                continue
+                toggle_btn.on('click', make_toggle())
 
-                            with ui.row().classes('w-full items-center gap-2'):
-                                ui.label(f'Set {set_num} — Target: {rep_str} reps{pct_str}').classes('text-sm font-bold w-full')
+                # --- Wire swap ---
+                def open_swap_dialog(
+                    eid=eid, toggle_btn=toggle_btn,
+                    last_best_label=last_best_label, sets=sets
+                ):
+                    from db import get_swap_candidates
+                    candidates = get_swap_candidates(eid, day_id, session.session_id)
 
-                            with ui.row().classes('w-full gap-2'):
-                                w_input = ui.number(placeholder='lb',   min=0, step=0.5).classes('flex-1')
-                                r_input = ui.number(placeholder='Reps', min=0, value=t_reps).classes('flex-1')
-                                i_input = ui.number(placeholder='RIR',  min=0, value=t_rir).classes('flex-1')
+                    with ui.dialog() as dialog, ui.card().classes('w-full'):
+                        ui.label('Swap Exercise').classes('font-bold text-lg')
+                        if not candidates:
+                            ui.label('No alternatives available.').classes('text-gray-400')
+                            ui.button('Close', on_click=dialog.close)
+                        else:
+                            selected = {'id': None, 'name': None}
+                            with ui.column().classes('w-full gap-2'):
+                                for c in candidates:
+                                    def pick(c=c):
+                                        selected['id']   = c['exercise_id']
+                                        selected['name'] = c['name']
+                                        ui.notify(f"Selected: {c['name']}", color='positive')
+                                    ui.button(
+                                        f"{c['name']} ({c['equipment']})",
+                                        on_click=pick
+                                    ).props('flat').classes('w-full text-left')
 
-                                def handle_log(
-                                    psid=psid, eid=eid, set_num=set_num,
-                                    set_type=set_type,
-                                    w=w_input, r=r_input, i=i_input
-                                ):
-                                    effective = session.exercise_swaps.get(eid, eid)
-                                    if not w.value:
-                                        ui.notify('Enter weight first', color='negative')
-                                        return
-                                    now = datetime.utcnow()
-                                    last_ex   = session.last_set_time_by_exercise.get(effective)
-                                    rest_secs = int((now - last_ex).total_seconds()) if last_ex else 0
+                            def confirm_swap(
+                                selected=selected, eid=eid,
+                                toggle_btn=toggle_btn,
+                                last_best_label=last_best_label
+                            ):
+                                if not selected['id']:
+                                    ui.notify('Pick an exercise first', color='negative')
+                                    return
+                                session.exercise_swaps[eid] = selected['id']
+                                new_best = get_last_best_set(selected['id'], session.session_id)
+                                toggle_btn.set_text(f"▶ {selected['name']} ({len(sets)} sets)")
+                                last_best_label.set_text(new_best)
+                                last_best_label.visible = True
+                                dialog.close()
+                                ui.notify(f"Swapped to {selected['name']}", color='positive')
 
-                                    is_pr, db_id = log_set(
-                                        session_id     = session.session_id,
-                                        exercise_id    = effective,
-                                        program_set_id = int(psid),
-                                        set_num        = set_num,
-                                        weight_lb      = float(w.value),
-                                        reps           = int(r.value or 0),
-                                        rir            = int(i.value or 0),
-                                        rest_secs      = rest_secs,
-                                        set_type       = set_type,
-                                    )
-                                    session.logged_sets[psid] = {
-                                        "weight_lb": float(w.value),
-                                        "reps"     : int(r.value or 0),
-                                        "rir"      : int(i.value or 0),
-                                        "rest_secs": rest_secs,
-                                        "is_pr"    : is_pr,
-                                        "db_id"    : db_id,
-                                        "set_type" : set_type,
-                                    }
-                                    session.last_logged_key  = psid
-                                    session.last_set_time    = now
-                                    session.last_set_time_by_exercise[effective] = now
-                                    session.first_set_logged = True
-                                    render_sets(eid=eid, sets=sets, set_rows=set_rows)
+                            with ui.row().classes('gap-2 mt-2'):
+                                ui.button('Confirm Swap', on_click=confirm_swap).props('color=blue')
+                                ui.button('Cancel', on_click=dialog.close)
 
-                                ui.button('Log', on_click=handle_log).props('color=red').classes('flex-1')
+                    dialog.open()
+
+                swap_btn.on('click', open_swap_dialog)
                 with expansion_body:
+                    # --- Set rows ---
+                    set_rows = ui.column().classes('w-full gap-2')
+
+                    def render_sets(eid=eid, sets=sets, set_rows=set_rows):
+                        set_rows.clear()
+                        with set_rows:
+                            for s in sets:
+                                psid     = str(s["program_set_id"])
+                                set_type = s["set_type"]
+                                set_num  = s["set_num"]
+                                t_reps   = s["target_reps"]
+                                t_rir    = s["target_rir"]
+                                t_pct    = s["target_pct_1rm"]
+                                pct_str  = f" @ {int(t_pct*100)}% 1RM" if t_pct else ""
+                                rep_str  = "AMRAP" if not t_reps or set_type == "amrap" else str(t_reps)
+
+                                if psid in session.logged_sets:
+                                    logged   = session.logged_sets[psid]
+                                    pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
+                                    rest_str = f" | Rest: {logged['rest_secs']}s" if logged.get("rest_secs") else ""
+                                    ui.label(
+                                        f"✅ Set {set_num} — {logged['weight_lb']}lb × {logged['reps']} reps"
+                                        f" @ RIR {logged['rir']}{rest_str}{pr_badge}"
+                                    ).classes('text-green-400 text-sm')
+                                    continue
+
+                                ui.label(
+                                    f'Set {set_num} — Target: {rep_str} reps{pct_str}'
+                                ).classes('text-sm font-bold')
+
+                                with ui.row().classes('w-full gap-2'):
+                                    w_input = ui.number(placeholder='lb',   min=0, step=0.5).classes('flex-1')
+                                    r_input = ui.number(placeholder='Reps', min=0, value=t_reps).classes('flex-1')
+                                    i_input = ui.number(placeholder='RIR',  min=0, value=t_rir).classes('flex-1')
+
+                                    def handle_log(
+                                        psid=psid, eid=eid, set_num=set_num,
+                                        set_type=set_type,
+                                        w=w_input, r=r_input, i=i_input
+                                    ):
+                                        effective = session.exercise_swaps.get(eid, eid)
+                                        if not w.value:
+                                            ui.notify('Enter weight first', color='negative')
+                                            return
+                                        now       = datetime.utcnow()
+                                        last_ex   = session.last_set_time_by_exercise.get(effective)
+                                        rest_secs = int((now - last_ex).total_seconds()) if last_ex else 0
+
+                                        is_pr, db_id = log_set(
+                                            session_id     = session.session_id,
+                                            exercise_id    = effective,
+                                            program_set_id = int(psid),
+                                            set_num        = set_num,
+                                            weight_lb      = float(w.value),
+                                            reps           = int(r.value or 0),
+                                            rir            = int(i.value or 0),
+                                            rest_secs      = rest_secs,
+                                            set_type       = set_type,
+                                        )
+                                        session.logged_sets[psid] = {
+                                            "weight_lb": float(w.value),
+                                            "reps"     : int(r.value or 0),
+                                            "rir"      : int(i.value or 0),
+                                            "rest_secs": rest_secs,
+                                            "is_pr"    : is_pr,
+                                            "db_id"    : db_id,
+                                            "set_type" : set_type,
+                                        }
+                                        session.last_logged_key  = psid
+                                        session.last_set_time    = now
+                                        session.last_set_time_by_exercise[effective] = now
+                                        session.first_set_logged = True
+                                        render_sets(eid=eid, sets=sets, set_rows=set_rows)
+
+                                    ui.button('Log', on_click=handle_log).props('color=red').classes('flex-1')
+                    
                     render_sets()
 
+        # --- Finish session ---
         ui.separator()
 
-        # --- Finish session ---
         def handle_finish():
             skipped = [
                 ex["exercise_name"] for ex in exercises
@@ -336,6 +350,8 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
             ui.navigate.to('/')
 
         ui.button('Finish Session', on_click=handle_finish).classes('w-full').props('color=blue')
+
+
 def render(session: WorkoutSession):
     programs = get_programs()
     if not programs:
