@@ -15,11 +15,58 @@ from fastapi import Response
 
 def setup_theme():
     ui.dark_mode().enable()
-    ui.colors(primary='deep-purple')
+    ui.colors(primary='red')
+    ui.add_head_html('''
+        <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+    ''')
     ui.add_css('''
+        body {
+            background-color: #0a0a0a !important;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+        }
+
+        h1, h2, h3, .nicegui-label.font-bold {
+            font-family: "Bebas Neue", sans-serif !important;
+            letter-spacing: 2px;
+        }
+
         .nicegui-header {
-            background-color: #1a1a2e !important;
+            background-color: #1a0000 !important;
+            border-bottom: 2px solid #cc0000 !important;
             padding: 12px 16px !important;
+        }
+
+        .q-card {
+            background-color: #111111 !important;
+            border: 1px solid #330000 !important;
+            border-radius: 4px !important;
+        }
+
+        .q-card:hover {
+            border-color: #cc0000 !important;
+        }
+
+        .q-btn[data-color="red"] {
+            background: #cc0000 !important;
+            box-shadow: 0 0 10px #cc000088 !important;
+        }
+
+        .q-btn[data-color="red"]:hover {
+            box-shadow: 0 0 20px #cc0000bb !important;
+        }
+
+        .text-green-400 {
+            color: #ffd700 !important;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cc0000;
         }
     ''')
 @app.get('/health')

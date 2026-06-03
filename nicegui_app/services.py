@@ -1,6 +1,19 @@
 from datetime import datetime
 from db import SessionLocal, Program, ProgramDay, ProgramSet, Session, LoggedSet, Exercise, get_swap_candidates
 
+def get_last_used_program_id() -> int:
+    """Return program_id of the most recently completed session across all programs."""
+    db = SessionLocal()
+    result = (
+        db.query(ProgramDay.program_id)
+        .join(Session, Session.program_day_id == ProgramDay.id)
+        .filter(Session.duration_mins != None)
+        .order_by(Session.date.desc())
+        .first()
+    )
+    db.close()
+    return result[0] if result else None
+
 
 def get_programs():
     db = SessionLocal()
