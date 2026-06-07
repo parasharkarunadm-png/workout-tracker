@@ -261,9 +261,14 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                     ).props('flat').classes('text-left flex-1')
                     swap_btn = ui.button('🔄').props('flat round')
                 logged_count = sum(1 for s in sets if str(s["program_set_id"]) in session.logged_sets)
-                progress_bar = ui.linear_progress(
-                    value=logged_count / len(sets) if sets else 0
-                ).classes('w-full').props('color=red size=4px')
+                progress_bar_bg = ui.element('div').classes('w-full').style(
+                    'height: 4px; background: #330000; border-radius: 2px; overflow: hidden;'
+                )
+                with progress_bar_bg:
+                    pct = (logged_count / len(sets) * 100) if sets else 0
+                    progress_bar = ui.element('div').style(
+                        f'height: 100%; width: {pct}%; background: #cc0000; transition: width 0.3s;'
+                    )
                 # --- Last best (hidden until expanded) ---
                 last_best_label = ui.label(last_best).classes('text-sm text-gray-400')
                 last_best_label.visible = False
@@ -273,15 +278,17 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                 expansion_body.visible = False
 
                 # --- Wire toggle ---
+                display = {'name': ex_name}
+
                 def make_toggle(
                     body=expansion_body, lbl=last_best_label,
-                    btn=toggle_btn, name=ex_name, count=len(sets)
+                    btn=toggle_btn, count=len(sets), display=display
                 ):
                     def toggle():
                         body.visible = not body.visible
                         lbl.visible  = not lbl.visible
                         btn.set_text(
-                            f"{'▼' if body.visible else '▶'} {name} ({count} sets)"
+                            f"{'▼' if body.visible else '▶'} {display['name']} ({count} sets)"
                         )
                     return toggle
 
@@ -290,11 +297,18 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                 # --- Wire swap ---
                 def open_swap_dialog(
                     eid=eid, toggle_btn=toggle_btn,
-                    last_best_label=last_best_label, sets=sets
+                    last_best_label=last_best_label, sets=sets, display=display
                 ):
                     from db import get_swap_candidates
-                    candidates = get_swap_candidates(eid, day_id, session.session_id)
-
+                    # keys = original exercise ids that were swapped out — allow back as candidates
+                    swapped_out = set(session.exercise_swaps.keys())
+                    ui.notify(f"swapped_out: {swapped_out}, exercise_swaps: {session.exercise_swaps}", color='info')
+                    candidates = get_swap_candidates(
+                        eid, day_id, session.session_id,
+                        swapped_out_ids=swapped_out
+                    )
+                    already_swapped_to = set(session.exercise_swaps.values())
+                    candidates = [c for c in candidates if c['exercise_id'] not in already_swapped_to]
                     with ui.dialog() as dialog, ui.card().classes('w-full'):
                         ui.label('Swap Exercise').classes('font-bold text-lg')
                         if not candidates:
@@ -316,13 +330,15 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                             def confirm_swap(
                                 selected=selected, eid=eid,
                                 toggle_btn=toggle_btn,
-                                last_best_label=last_best_label
+                                last_best_label=last_best_label,
+                                display=display
                             ):
                                 if not selected['id']:
                                     ui.notify('Pick an exercise first', color='negative')
                                     return
                                 session.exercise_swaps[eid] = selected['id']
                                 new_best = get_last_best_set(selected['id'], session.session_id)
+                                display['name'] = selected['name']
                                 toggle_btn.set_text(f"▶ {selected['name']} ({len(sets)} sets)")
                                 last_best_label.set_text(new_best)
                                 last_best_label.visible = True
@@ -415,7 +431,10 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
 
                         # Update progress bar
                         logged_count = sum(1 for s in sets if str(s["program_set_id"]) in session.logged_sets)
-                        progress_bar.set_value(logged_count / len(sets) if sets else 0)
+                        pct = (logged_count / len(sets) * 100) if sets else 0
+                        progress_bar.style(
+                            f'height: 100%; width: {pct}%; background: #cc0000; transition: width 0.3s;'
+                        )
                     
                     render_sets()
 
@@ -534,6 +553,20 @@ def render(session: WorkoutSession):
                     ui.button('START SESSION',
                         on_click=lambda: ui.navigate.to(f'/logger/{day_id}/0')
                     ).classes('w-full text-lg tracking-widest').props('color=red')
+
+                    def show_preview(day_id=day_id):
+                        from nicegui_app.services import get_planned_exercises
+                        exercises = get_planned_exercises(day_id)
+                        with ui.dialog() as dialog, ui.card().classes('w-full'):
+                            ui.label('WORKOUT PREVIEW').classes('font-bold text-lg tracking-widest')
+                            ui.separator()
+                            for ex in exercises:
+                                ui.label(f"• {ex['exercise_name']}").classes('text-sm')
+                            ui.separator()
+                            ui.button('Close', on_click=dialog.close).classes('w-full')
+                        dialog.open()
+
+                    ui.button('PREVIEW', on_click=show_preview).classes('w-full tracking-widest').props('outline color=red')
 
         # --- ASCII art ---
         ascii_display = ui.html('', sanitize=False)

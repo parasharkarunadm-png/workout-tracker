@@ -69,6 +69,12 @@ def setup_theme():
             background: #cc0000;
         }
     ''')
+    ui.add_css('''
+        .q-linear-progress__track, 
+        .q-linear-progress span {
+            display: none !important;
+        }
+    ''')
 @app.get('/health')
 def health():
     return Response('ok')
