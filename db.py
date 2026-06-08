@@ -126,7 +126,13 @@ class LoggedSet(Base):
 
 import os
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///workout.db")
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,        # tests connection before using it
+    pool_recycle=300,          # recycle connections every 5 mins
+    connect_args={"connect_timeout": 10},
+)
 SessionLocal = sessionmaker(bind=engine)
 
 

@@ -6,7 +6,7 @@ warnings.filterwarnings('ignore', category=urllib3.exceptions.NotOpenSSLWarning)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from nicegui import ui, app
-from db import init_db
+from db import init_db,SessionLocal
 from nicegui_app.state import WorkoutSession
 
 init_db()
@@ -94,6 +94,15 @@ def logger(day_id: int, open_sid: int):
     session = WorkoutSession()
     screen_logger(session, day_id, open_sid if open_sid != 0 else None)
 
+def keep_db_alive():
+    try:
+        db = SessionLocal()
+        db.execute('SELECT 1')
+        db.close()
+    except:
+        pass
+
+ui.timer(240, keep_db_alive, once=False)
 
 ui.run(
     title='Workout Tracker',
