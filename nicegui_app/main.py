@@ -82,6 +82,7 @@ def health():
 @ui.page('/')
 def index():
     setup_theme()
+    ui.timer(240, keep_db_alive, once=False)
     session = WorkoutSession()
     from nicegui_app.log_workout import render
     render(session)
@@ -90,6 +91,7 @@ def index():
 @ui.page('/logger/{day_id}/{open_sid}')
 def logger(day_id: int, open_sid: int):
     setup_theme()
+    ui.timer(240, keep_db_alive, once=False)
     from nicegui_app.log_workout import screen_logger
     session = WorkoutSession()
     screen_logger(session, day_id, open_sid if open_sid != 0 else None)
@@ -102,7 +104,6 @@ def keep_db_alive():
     except:
         pass
 
-ui.timer(240, keep_db_alive, once=False)
 
 ui.run(
     title='Workout Tracker',
