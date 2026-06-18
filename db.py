@@ -126,12 +126,13 @@ class LoggedSet(Base):
 
 import os
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///workout.db")
+connect_args = {"connect_timeout": 10} if DATABASE_URL.startswith("postgres") else {}
 engine = create_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,        # tests connection before using it
     pool_recycle=300,          # recycle connections every 5 mins
-    connect_args={"connect_timeout": 10},
+    connect_args=connect_args,
 )
 SessionLocal = sessionmaker(bind=engine)
 
@@ -148,6 +149,33 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def delete_last_set(session_id: int, exercise_id: int) -> bool:
+    """Delete the most recently logged set for an exercise in a session."""
+    db = SessionLocal()
+    try:
+        entry = (
+            db.query(LoggedSet)
+            .filter(
+                LoggedSet.session_id == session_id,
+                LoggedSet.exercise_id == exercise_id,
+            )
+            .order_by(LoggedSet.logged_at.desc(), LoggedSet.set_num.desc())
+            .first()
+        )
+        if entry is None:
+            return False
+        db.delete(entry)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
+
 def get_swap_candidates(exercise_id: int, program_day_id: int, session_id: int = None, swapped_out_ids: set = None) -> list:
     db = SessionLocal()
 

@@ -240,6 +240,8 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                 rsecs = int((datetime.utcnow() - session.last_set_time).total_seconds())
                 h, m, s = rsecs // 3600, (rsecs % 3600) // 60, rsecs % 60
                 rest_label.set_text(f'Rest: {h:02}:{m:02}:{s:02}')
+            else:
+                rest_label.set_text('Rest: --:--:--')
 
         ui.timer(1.0, update_timers)
 
@@ -259,6 +261,8 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                     toggle_btn = ui.button(
                         f'▶ {ex_name} ({len(sets)} sets)',
                     ).props('flat').classes('text-left flex-1')
+                    undo_btn = ui.button('↩').props('flat round')
+                    undo_btn.visible = False
                     swap_btn = ui.button('🔄').props('flat round')
                 logged_count = sum(1 for s in sets if str(s["program_set_id"]) in session.logged_sets)
                 progress_bar_bg = ui.element('div').classes('w-full').style(
@@ -356,7 +360,10 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                     # --- Set rows ---
                     set_rows = ui.column().classes('w-full gap-2')
 
-                    def render_sets(eid=eid, sets=sets, set_rows=set_rows, progress_bar=progress_bar):
+                    def render_sets(
+                        eid=eid, sets=sets, set_rows=set_rows,
+                        progress_bar=progress_bar, undo_btn=undo_btn
+                    ):
                         set_rows.clear()
                         with set_rows:
                             for s in sets:
@@ -391,7 +398,8 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                                     def handle_log(
                                         psid=psid, eid=eid, set_num=set_num,
                                         set_type=set_type,
-                                        w=w_input, r=r_input, i=i_input
+                                        w=w_input, r=r_input, i=i_input,
+                                        refresh_card=render_sets
                                     ):
                                         effective = session.exercise_swaps.get(eid, eid)
                                         if not w.value:
@@ -425,7 +433,7 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                                         session.last_set_time    = now
                                         session.last_set_time_by_exercise[effective] = now
                                         session.first_set_logged = True
-                                        render_sets(eid=eid, sets=sets, set_rows=set_rows, progress_bar=progress_bar)
+                                        refresh_card()
 
                                     ui.button('Log', on_click=handle_log).props('color=red').classes('flex-1')
 
@@ -435,7 +443,47 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                         progress_bar.style(
                             f'height: 100%; width: {pct}%; background: #cc0000; transition: width 0.3s;'
                         )
+                        undo_btn.visible = logged_count > 0
+                        undo_btn.update()
                     
+                    def make_handle_undo(card_eid, card_sets, refresh_card):
+                        def handle_undo():
+                            from db import SessionLocal, LoggedSet, delete_last_set
+
+                            effective = session.exercise_swaps.get(card_eid, card_eid)
+                            deleted = delete_last_set(session.session_id, effective)
+                            if not deleted:
+                                ui.notify('No set to undo', color='warning')
+                                return
+
+                            logged, adhoc, counter, last_key, last_at = rehydrate_session(session.session_id)
+                            session.logged_sets = logged
+                            session.adhoc_sets = adhoc
+                            session.adhoc_counter = counter
+                            session.last_logged_key = last_key
+                            session.last_set_time = last_at
+                            session.first_set_logged = len(logged) > 0
+
+                            db = SessionLocal()
+                            latest_for_exercise = (
+                                db.query(LoggedSet.logged_at)
+                                .filter(
+                                    LoggedSet.session_id == session.session_id,
+                                    LoggedSet.exercise_id == effective,
+                                )
+                                .order_by(LoggedSet.logged_at.desc())
+                                .first()
+                            )
+                            db.close()
+                            if latest_for_exercise:
+                                session.last_set_time_by_exercise[effective] = latest_for_exercise[0]
+                            else:
+                                session.last_set_time_by_exercise.pop(effective, None)
+                            refresh_card()
+                            ui.notify('Last set undone', color='positive')
+                        return handle_undo
+
+                    undo_btn.on('click', make_handle_undo(eid, sets, render_sets))
                     render_sets()
 
         # --- Finish session ---
