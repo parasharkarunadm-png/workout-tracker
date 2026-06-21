@@ -246,24 +246,17 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
         ui.timer(1.0, update_timers)
 
         # --- Exercises ---
-        for ex in exercises:
-            eid      = ex["exercise_id"]
-            ex_name  = ex["exercise_name"]
-            sets     = ex["sets"]
-
+        def build_exercise_card(eid, ex_name, sets):
             effective_eid = session.exercise_swaps.get(eid, eid)
             last_best     = get_last_best_set(effective_eid, session.session_id)
 
             with ui.card().classes('w-full'):
-
-                # --- Header row ---
                 with ui.row().classes('w-full items-center justify-between'):
-                    toggle_btn = ui.button(
-                        f'▶ {ex_name} ({len(sets)} sets)',
-                    ).props('flat').classes('text-left flex-1')
+                    toggle_btn = ui.button(f'▶ {ex_name} ({len(sets)} sets)').props('flat').classes('text-left flex-1')
                     undo_btn = ui.button('↩').props('flat round')
                     undo_btn.visible = False
                     swap_btn = ui.button('🔄').props('flat round')
+
                 logged_count = sum(1 for s in sets if str(s["program_set_id"]) in session.logged_sets)
                 progress_bar_bg = ui.element('div').classes('w-full').style(
                     'height: 4px; background: #330000; border-radius: 2px; overflow: hidden;'
@@ -273,44 +266,25 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                     progress_bar = ui.element('div').style(
                         f'height: 100%; width: {pct}%; background: #cc0000; transition: width 0.3s;'
                     )
-                # --- Last best (hidden until expanded) ---
+
                 last_best_label = ui.label(last_best).classes('text-sm text-gray-400')
                 last_best_label.visible = False
-
-                # --- Expansion body (hidden until expanded) ---
                 expansion_body = ui.column().classes('w-full gap-2')
                 expansion_body.visible = False
-
-                # --- Wire toggle ---
                 display = {'name': ex_name}
 
-                def make_toggle(
-                    body=expansion_body, lbl=last_best_label,
-                    btn=toggle_btn, count=len(sets), display=display
-                ):
+                def make_toggle(body=expansion_body, lbl=last_best_label, btn=toggle_btn, count=len(sets), display=display):
                     def toggle():
                         body.visible = not body.visible
                         lbl.visible  = not lbl.visible
-                        btn.set_text(
-                            f"{'▼' if body.visible else '▶'} {display['name']} ({count} sets)"
-                        )
+                        btn.set_text(f"{'▼' if body.visible else '▶'} {display['name']} ({count} sets)")
                     return toggle
-
                 toggle_btn.on('click', make_toggle())
 
-                # --- Wire swap ---
-                def open_swap_dialog(
-                    eid=eid, toggle_btn=toggle_btn,
-                    last_best_label=last_best_label, sets=sets, display=display
-                ):
+                def open_swap_dialog(eid=eid, toggle_btn=toggle_btn, last_best_label=last_best_label, sets=sets, display=display):
                     from db import get_swap_candidates
-                    # keys = original exercise ids that were swapped out — allow back as candidates
                     swapped_out = set(session.exercise_swaps.keys())
-                    ui.notify(f"swapped_out: {swapped_out}, exercise_swaps: {session.exercise_swaps}", color='info')
-                    candidates = get_swap_candidates(
-                        eid, day_id, session.session_id,
-                        swapped_out_ids=swapped_out
-                    )
+                    candidates = get_swap_candidates(eid, day_id, session.session_id, swapped_out_ids=swapped_out)
                     already_swapped_to = set(session.exercise_swaps.values())
                     candidates = [c for c in candidates if c['exercise_id'] not in already_swapped_to]
                     with ui.dialog() as dialog, ui.card().classes('w-full'):
@@ -326,17 +300,8 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                                         selected['id']   = c['exercise_id']
                                         selected['name'] = c['name']
                                         ui.notify(f"Selected: {c['name']}", color='positive')
-                                    ui.button(
-                                        f"{c['name']} ({c['equipment']})",
-                                        on_click=pick
-                                    ).props('flat').classes('w-full text-left')
-
-                            def confirm_swap(
-                                selected=selected, eid=eid,
-                                toggle_btn=toggle_btn,
-                                last_best_label=last_best_label,
-                                display=display
-                            ):
+                                    ui.button(f"{c['name']} ({c['equipment']})", on_click=pick).props('flat').classes('w-full text-left')
+                            def confirm_swap(selected=selected, eid=eid, toggle_btn=toggle_btn, last_best_label=last_best_label, display=display):
                                 if not selected['id']:
                                     ui.notify('Pick an exercise first', color='negative')
                                     return
@@ -348,143 +313,108 @@ def screen_logger(session: WorkoutSession, day_id: int, open_sid: int = None):
                                 last_best_label.visible = True
                                 dialog.close()
                                 ui.notify(f"Swapped to {selected['name']}", color='positive')
-
                             with ui.row().classes('gap-2 mt-2'):
                                 ui.button('Confirm Swap', on_click=confirm_swap).props('color=blue')
                                 ui.button('Cancel', on_click=dialog.close)
-
                     dialog.open()
-
                 swap_btn.on('click', open_swap_dialog)
+
                 with expansion_body:
-                    # --- Set rows ---
-                    set_rows = ui.column().classes('w-full gap-2')
+                    @ui.refreshable
+                    def render_sets_ui():
+                        for s in sets:
+                            psid     = str(s["program_set_id"])
+                            set_type = s["set_type"]
+                            set_num  = s["set_num"]
+                            t_reps   = s["target_reps"]
+                            t_rir    = s["target_rir"]
+                            t_pct    = s["target_pct_1rm"]
+                            pct_str  = f" @ {int(t_pct*100)}% 1RM" if t_pct else ""
+                            rep_str  = "AMRAP" if not t_reps or set_type == "amrap" else str(t_reps)
 
-                    def render_sets(
-                        eid=eid, sets=sets, set_rows=set_rows,
-                        progress_bar=progress_bar, undo_btn=undo_btn
-                    ):
-                        set_rows.clear()
-                        with set_rows:
-                            for s in sets:
-                                psid     = str(s["program_set_id"])
-                                set_type = s["set_type"]
-                                set_num  = s["set_num"]
-                                t_reps   = s["target_reps"]
-                                t_rir    = s["target_rir"]
-                                t_pct    = s["target_pct_1rm"]
-                                pct_str  = f" @ {int(t_pct*100)}% 1RM" if t_pct else ""
-                                rep_str  = "AMRAP" if not t_reps or set_type == "amrap" else str(t_reps)
-
-                                if psid in session.logged_sets:
-                                    logged   = session.logged_sets[psid]
-                                    pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
-                                    rest_str = f" | Rest: {logged['rest_secs']}s" if logged.get("rest_secs") else ""
-                                    ui.label(
-                                        f"✅ Set {set_num} — {logged['weight_lb']}lb × {logged['reps']} reps"
-                                        f" @ RIR {logged['rir']}{rest_str}{pr_badge}"
-                                    ).classes('text-green-400 text-sm')
-                                    continue
-
+                            if psid in session.logged_sets:
+                                logged   = session.logged_sets[psid]
+                                pr_badge = " 🏆 PR" if logged.get("is_pr") else ""
+                                rest_str = f" | Rest: {logged['rest_secs']}s" if logged.get("rest_secs") else ""
                                 ui.label(
-                                    f'Set {set_num} — Target: {rep_str} reps{pct_str}'
-                                ).classes('text-sm font-bold')
+                                    f"✅ Set {set_num} — {logged['weight_lb']}lb × {logged['reps']} reps"
+                                    f" @ RIR {logged['rir']}{rest_str}{pr_badge}"
+                                ).classes('text-green-400 text-sm')
+                                continue
 
-                                with ui.row().classes('w-full gap-2'):
-                                    w_input = ui.number(placeholder='lb',   min=0, step=0.5).classes('flex-1')
-                                    r_input = ui.number(placeholder='Reps', min=0, value=t_reps).classes('flex-1')
-                                    i_input = ui.number(placeholder='RIR',  min=0, value=t_rir).classes('flex-1')
+                            ui.label(f'Set {set_num} — Target: {rep_str} reps{pct_str}').classes('text-sm font-bold')
+                            with ui.row().classes('w-full gap-2'):
+                                w_input = ui.number(placeholder='lb',   min=0, step=0.5).classes('flex-1')
+                                r_input = ui.number(placeholder='Reps', min=0, value=t_reps).classes('flex-1')
+                                i_input = ui.number(placeholder='RIR',  min=0, value=t_rir).classes('flex-1')
 
-                                    def handle_log(
-                                        psid=psid, eid=eid, set_num=set_num,
-                                        set_type=set_type,
-                                        w=w_input, r=r_input, i=i_input,
-                                        refresh_card=render_sets
-                                    ):
-                                        effective = session.exercise_swaps.get(eid, eid)
-                                        if not w.value:
-                                            ui.notify('Enter weight first', color='negative')
-                                            return
-                                        now       = datetime.utcnow()
-                                        last_ex   = session.last_set_time_by_exercise.get(effective)
-                                        rest_secs = int((now - last_ex).total_seconds()) if last_ex else 0
+                                def handle_log(psid=psid, eid=eid, set_num=set_num, set_type=set_type, w=w_input, r=r_input, i=i_input):
+                                    effective = session.exercise_swaps.get(eid, eid)
+                                    if not w.value:
+                                        ui.notify('Enter weight first', color='negative')
+                                        return
+                                    now       = datetime.utcnow()
+                                    last_ex   = session.last_set_time_by_exercise.get(effective)
+                                    rest_secs = int((now - last_ex).total_seconds()) if last_ex else 0
+                                    is_pr, db_id = log_set(
+                                        session_id=session.session_id, exercise_id=effective,
+                                        program_set_id=int(psid), set_num=set_num,
+                                        weight_lb=float(w.value), reps=int(r.value or 0),
+                                        rir=int(i.value or 0), rest_secs=rest_secs, set_type=set_type,
+                                    )
+                                    session.logged_sets[psid] = {
+                                        "weight_lb": float(w.value), "reps": int(r.value or 0),
+                                        "rir": int(i.value or 0), "rest_secs": rest_secs,
+                                        "is_pr": is_pr, "db_id": db_id, "set_type": set_type,
+                                    }
+                                    session.last_logged_key  = psid
+                                    session.last_set_time    = now
+                                    session.last_set_time_by_exercise[effective] = now
+                                    session.first_set_logged = True
+                                    render_sets_ui.refresh()
 
-                                        is_pr, db_id = log_set(
-                                            session_id     = session.session_id,
-                                            exercise_id    = effective,
-                                            program_set_id = int(psid),
-                                            set_num        = set_num,
-                                            weight_lb      = float(w.value),
-                                            reps           = int(r.value or 0),
-                                            rir            = int(i.value or 0),
-                                            rest_secs      = rest_secs,
-                                            set_type       = set_type,
-                                        )
-                                        session.logged_sets[psid] = {
-                                            "weight_lb": float(w.value),
-                                            "reps"     : int(r.value or 0),
-                                            "rir"      : int(i.value or 0),
-                                            "rest_secs": rest_secs,
-                                            "is_pr"    : is_pr,
-                                            "db_id"    : db_id,
-                                            "set_type" : set_type,
-                                        }
-                                        session.last_logged_key  = psid
-                                        session.last_set_time    = now
-                                        session.last_set_time_by_exercise[effective] = now
-                                        session.first_set_logged = True
-                                        refresh_card()
+                                ui.button('Log', on_click=handle_log).props('color=red').classes('flex-1')
 
-                                    ui.button('Log', on_click=handle_log).props('color=red').classes('flex-1')
-
-                        # Update progress bar
                         logged_count = sum(1 for s in sets if str(s["program_set_id"]) in session.logged_sets)
                         pct = (logged_count / len(sets) * 100) if sets else 0
-                        progress_bar.style(
-                            f'height: 100%; width: {pct}%; background: #cc0000; transition: width 0.3s;'
-                        )
+                        progress_bar.style(f'height: 100%; width: {pct}%; background: #cc0000; transition: width 0.3s;')
                         undo_btn.visible = logged_count > 0
                         undo_btn.update()
-                    
-                    def make_handle_undo(card_eid, card_sets, refresh_card):
-                        def handle_undo():
-                            from db import SessionLocal, LoggedSet, delete_last_set
 
-                            effective = session.exercise_swaps.get(card_eid, card_eid)
-                            deleted = delete_last_set(session.session_id, effective)
-                            if not deleted:
-                                ui.notify('No set to undo', color='warning')
-                                return
+                    def handle_undo():
+                        from db import SessionLocal, LoggedSet, delete_last_set
+                        effective = session.exercise_swaps.get(eid, eid)
+                        deleted = delete_last_set(session.session_id, effective)
+                        if not deleted:
+                            ui.notify('No set to undo', color='warning')
+                            return
+                        logged, adhoc, counter, last_key, last_at = rehydrate_session(session.session_id)
+                        session.logged_sets      = logged
+                        session.adhoc_sets       = adhoc
+                        session.adhoc_counter    = counter
+                        session.last_logged_key  = last_key
+                        session.last_set_time    = last_at
+                        session.first_set_logged = len(logged) > 0
+                        db = SessionLocal()
+                        latest = (
+                            db.query(LoggedSet.logged_at)
+                            .filter(LoggedSet.session_id == session.session_id, LoggedSet.exercise_id == effective)
+                            .order_by(LoggedSet.logged_at.desc())
+                            .first()
+                        )
+                        db.close()
+                        if latest:
+                            session.last_set_time_by_exercise[effective] = latest[0]
+                        else:
+                            session.last_set_time_by_exercise.pop(effective, None)
+                        render_sets_ui.refresh()
+                        ui.notify('Last set undone', color='positive')
 
-                            logged, adhoc, counter, last_key, last_at = rehydrate_session(session.session_id)
-                            session.logged_sets = logged
-                            session.adhoc_sets = adhoc
-                            session.adhoc_counter = counter
-                            session.last_logged_key = last_key
-                            session.last_set_time = last_at
-                            session.first_set_logged = len(logged) > 0
+                    undo_btn.on('click', handle_undo)
+                    render_sets_ui()
 
-                            db = SessionLocal()
-                            latest_for_exercise = (
-                                db.query(LoggedSet.logged_at)
-                                .filter(
-                                    LoggedSet.session_id == session.session_id,
-                                    LoggedSet.exercise_id == effective,
-                                )
-                                .order_by(LoggedSet.logged_at.desc())
-                                .first()
-                            )
-                            db.close()
-                            if latest_for_exercise:
-                                session.last_set_time_by_exercise[effective] = latest_for_exercise[0]
-                            else:
-                                session.last_set_time_by_exercise.pop(effective, None)
-                            refresh_card()
-                            ui.notify('Last set undone', color='positive')
-                        return handle_undo
-
-                    undo_btn.on('click', make_handle_undo(eid, sets, render_sets))
-                    render_sets()
+        for ex in exercises:
+            build_exercise_card(ex["exercise_id"], ex["exercise_name"], ex["sets"])
 
         # --- Finish session ---
         ui.separator()

@@ -191,9 +191,6 @@ def get_swap_candidates(exercise_id: int, program_day_id: int, session_id: int =
         .distinct()
         .all()
     )
-    print(f"scheduled_ids raw: {scheduled_ids}")
-    print(f"excluded before swapped_out removal: {[row[0] for row in scheduled_ids]}")
-    print(f"swapped_out_ids received: {swapped_out_ids}")
     # Exclude scheduled exercises but allow swapped-out originals back in
     excluded_ids = {row[0] for row in scheduled_ids}
     if swapped_out_ids:
@@ -207,9 +204,7 @@ def get_swap_candidates(exercise_id: int, program_day_id: int, session_id: int =
             .distinct()
             .all()
         )
-        print(f"logged_ids: {[row[0] for row in logged_ids]}")
         excluded_ids.update(row[0] for row in logged_ids)
-    print(f"final excluded_ids: {excluded_ids}")
 
     candidates = (
         db.query(Exercise)
