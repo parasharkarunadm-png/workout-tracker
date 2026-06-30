@@ -57,7 +57,8 @@ workout-tracker/
 ├── app.py              # Entry point, page routing, session state defaults
 ├── db.py               # SQLAlchemy models and database initialization
 ├── log_workout.py      # Workout logging UI (Screen 1 + Screen 2)
-├── importer.py         # Program import from Excel template
+├── importer.py         # Legacy Excel template importer
+├── import_program.py   # CSV-based program importer for Neon/local DB
 ├── seed.py             # Exercise library seed script
 ├── list_exercises.py   # Print all exercises in the database
 ├── phat_import.xlsx    # PHAT program import template (Week 1)
@@ -87,6 +88,29 @@ python importer.py
 ```
 
 The importer validates all exercise names before writing anything. If names don't match, it prints a list of unmatched names and exits without importing.
+
+### Importing a new program
+
+For CSV-based imports, use the standalone script:
+
+```bash
+python import_program.py "<Program Name>" <path_to_csv>
+```
+
+Expected CSV columns:
+
+```text
+week, day_num, day_label, exercise_name, set_num, target_reps, target_rir, target_pct_1rm, notes
+```
+
+Important notes:
+- Every exercise referenced in the CSV must already exist in the `exercises` table before import.
+- If a name is missing, add it first to the correct database (for example, directly in Neon with an `INSERT` into `exercises` using the required columns: `name`, `primary_muscle`, `equipment`, `movement_pattern`, and optional `notes`).
+- The script checks for a duplicate program name and missing exercises before writing anything.
+- Imports run inside a single transaction, so a failure aborts cleanly with no partial writes.
+- `DATABASE_URL` must point to the correct Neon connection string, since the script reads the database connection from the environment the same way the app does.
+
+Imported programs so far include: PHAT, Strength by Dorian, and 5K Strengthening.
 
 ---
 

@@ -80,6 +80,7 @@ EXERCISES = [
 
     # --- Legs ---
     {"name": "Barbell Squat",                 "primary_muscle": "quads",      "equipment": "barbell",    "movement_pattern": "squat"},
+    {"name": "Squat",                         "primary_muscle": "quads",      "equipment": "barbell",    "movement_pattern": "squat"},
     {"name": "Leg Press",                     "primary_muscle": "quads",      "equipment": "machine",    "movement_pattern": "squat"},
     {"name": "Hack Squat",                    "primary_muscle": "quads",      "equipment": "machine",    "movement_pattern": "squat"},
     {"name": "Leg Extension",                 "primary_muscle": "quads",      "equipment": "machine",    "movement_pattern": "isolation"},
@@ -92,6 +93,10 @@ EXERCISES = [
     {"name": "Standing Calf Raise",           "primary_muscle": "calves",     "equipment": "machine",    "movement_pattern": "isolation"},
     {"name": "Seated Calf Raise",             "primary_muscle": "calves",     "equipment": "machine",    "movement_pattern": "isolation"},
     {"name": "Donkey Calf Raise",             "primary_muscle": "calves",     "equipment": "machine",    "movement_pattern": "isolation"},
+    {"name": "Dumbbell Lateral Raise",        "primary_muscle": "shoulders",  "equipment": "dumbbell",   "movement_pattern": "isolation"},
+    {"name": "Eccentric Heel Drop",           "primary_muscle": "calves",     "equipment": "bodyweight", "movement_pattern": "isolation"},
+    {"name": "Single Leg Romanian Deadlift",  "primary_muscle": "hamstrings", "equipment": "dumbbell",   "movement_pattern": "hinge"},
+    {"name": "Tibialis Anterior Raise",       "primary_muscle": "tibialis anterior", "equipment": "bodyweight", "movement_pattern": "isolation"},
 ]
 
 
