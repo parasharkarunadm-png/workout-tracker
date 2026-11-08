@@ -1,5 +1,10 @@
 venv/
+venv311/
+.web
+.states
+__pycache__/
 *.db
 excel_converter.py
 set-db.sh
 workout_backup.sql
+x_requirements.txt
