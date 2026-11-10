@@ -4,7 +4,7 @@ A personal workout logging app built and iterated from real daily gym use.
 Imports training programs from spreadsheets, logs sets against a plan,
 tracks rest time per exercise, and stores everything in PostgreSQL for analysis.
 
-**Live app:** [iron-arcade.onrender.com](https://your-render-url.onrender.com)
+**Live app:** [iron-arcade.onrender.com](https://workout-tracker-tvgl.onrender.com)
 _(single-user demo — logging writes to a real database)_
 
 ---
